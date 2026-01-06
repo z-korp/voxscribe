@@ -131,8 +131,63 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
   );
 
   /**
-   * Strategy C: Desktop fallback (current method)
-   * Captures desktop audio via screen share
+   * Strategy C: System Audio Loopback (Windows 10 1903+)
+   * Uses getDisplayMedia with system audio - GENERIC solution for all Windows users
+   */
+  const startSystemAudioCapture = useCallback(
+    async (includeMicrophone: boolean): Promise<MediaStream> => {
+      try {
+        // Request screen share with system audio
+        // On Windows 10 1903+, this captures ALL system audio via WASAPI loopback
+        const displayStream = await navigator.mediaDevices.getDisplayMedia({
+          audio: true, // This will capture system audio on Windows 10 1903+
+          video: true, // Required but we'll stop the video track
+        });
+
+        refs.current.activeStreams.push(displayStream);
+
+        // Stop video track immediately (we only want audio)
+        displayStream.getVideoTracks().forEach((track) => track.stop());
+
+        let finalStream: MediaStream;
+
+        if (includeMicrophone) {
+          const micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+            },
+          });
+          refs.current.activeStreams.push(micStream);
+
+          const audioContext = new AudioContext();
+          refs.current.audioContext = audioContext;
+
+          const destination = audioContext.createMediaStreamDestination();
+          const systemSource = audioContext.createMediaStreamSource(displayStream);
+          const micSource = audioContext.createMediaStreamSource(micStream);
+
+          systemSource.connect(destination);
+          micSource.connect(destination);
+
+          finalStream = destination.stream;
+        } else {
+          finalStream = new MediaStream(displayStream.getAudioTracks());
+        }
+
+        setInfoMessage('✅ Capturing all system audio (generic method)');
+        return finalStream;
+      } catch (error) {
+        console.warn('System audio capture failed, trying fallback:', error);
+        throw error;
+      }
+    },
+    [setInfoMessage],
+  );
+
+  /**
+   * Strategy D: Desktop fallback (legacy method)
+   * Captures desktop audio via Electron desktopCapturer
    */
   const startDesktopCapture = useCallback(
     async (includeMicrophone: boolean): Promise<MediaStream> => {
@@ -274,34 +329,43 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
       stopRecordingStreams();
       refs.current.recordedChunks = [];
 
-      // Get capture strategy
-      const { strategy } = await getCaptureStrategy();
-
       let finalStream: MediaStream;
 
-      // Execute strategy
-      switch (strategy.type) {
-        case 'loopback':
-          finalStream = await startLoopbackCapture(strategy.deviceId, strategy.deviceLabel);
-          break;
+      // GENERIC APPROACH: Try system audio loopback first (Windows 10 1903+)
+      // This works for ALL users without any configuration
+      try {
+        finalStream = await startSystemAudioCapture(includeMicrophone);
+        console.log('✅ Using system audio loopback (generic method)');
+      } catch (error) {
+        console.warn('System audio loopback failed, trying alternative methods:', error);
 
-        case 'multi-source':
-          finalStream = await startMultiSourceCapture(
-            strategy.deviceIds,
-            strategy.deviceLabels,
-            includeMicrophone,
-          );
-          break;
+        // Fallback: Get capture strategy
+        const { strategy } = await getCaptureStrategy();
 
-        case 'desktop-fallback':
-          finalStream = await startDesktopCapture(includeMicrophone);
-          if (strategy.suggestStereoMix) {
-            setInfoMessage(`⚠️ ${strategy.warning}`);
-          }
-          break;
+        // Execute fallback strategy
+        switch (strategy.type) {
+          case 'loopback':
+            finalStream = await startLoopbackCapture(strategy.deviceId, strategy.deviceLabel);
+            break;
 
-        default:
-          throw new Error('Unknown capture strategy');
+          case 'multi-source':
+            finalStream = await startMultiSourceCapture(
+              strategy.deviceIds,
+              strategy.deviceLabels,
+              includeMicrophone,
+            );
+            break;
+
+          case 'desktop-fallback':
+            finalStream = await startDesktopCapture(includeMicrophone);
+            if (strategy.suggestStereoMix) {
+              setInfoMessage(`⚠️ ${strategy.warning}`);
+            }
+            break;
+
+          default:
+            throw new Error('Unknown capture strategy');
+        }
       }
 
       // Create MediaRecorder
@@ -374,6 +438,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
     }
   }, [
     stopRecordingStreams,
+    startSystemAudioCapture,
     getCaptureStrategy,
     startLoopbackCapture,
     startMultiSourceCapture,
