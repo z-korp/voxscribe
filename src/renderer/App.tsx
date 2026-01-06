@@ -19,7 +19,6 @@ import {
 } from './components';
 
 const DEFAULT_TRANSCRIPTION: TranscriptionSettings = {
-  enabled: true,
   language: 'auto',
 };
 
@@ -178,7 +177,10 @@ function App(): JSX.Element {
   };
 
   const handleTranscriptionLanguageChange = (language: string): void => {
-    setTranscriptionSettings((current) => ({ ...current, language }));
+    setTranscriptionSettings((current) => ({
+      ...current,
+      language: language as TranscriptionSettings['language'],
+    }));
   };
 
   const handleAnalyze = async (): Promise<void> => {

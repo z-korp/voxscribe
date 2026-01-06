@@ -818,7 +818,17 @@ export class MediaChunkService {
         const segments = await this.whisperService.transcribe(chunk.wavPath, {
           modelName: options.modelName || 'medium',
           modelPath: options.modelPath || undefined,
-          language: options.language || 'auto',
+          language: (options.language || 'auto') as
+            | 'auto'
+            | 'en'
+            | 'fr'
+            | 'es'
+            | 'de'
+            | 'it'
+            | 'pt'
+            | 'nl'
+            | 'ja'
+            | 'zh',
           wordTimestamps: options.enableWords,
         });
 

@@ -1,23 +1,35 @@
 import { useCallback, useRef, useState } from 'react';
 import { RecordingState, DEFAULT_RECORDING_STATE } from '../types';
 
+type RecordingRefs = {
+  mediaRecorder: MediaRecorder | null;
+  recordedChunks: Blob[];
+  recordingStartTime: number;
+  recordingTimer: number | null;
+  activeStreams: MediaStream[];
+};
+
 export function useRecording(setInfoMessage: (msg: string | null) => void) {
   const [recordingState, setRecordingState] = useState<RecordingState>(DEFAULT_RECORDING_STATE);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordedChunksRef = useRef<Blob[]>([]);
-  const recordingStartTimeRef = useRef<number>(0);
-  const recordingTimerRef = useRef<number | null>(null);
-  const activeStreamsRef = useRef<MediaStream[]>([]);
+
+  // Use a single ref object to avoid stale closure issues
+  const refs = useRef<RecordingRefs>({
+    mediaRecorder: null,
+    recordedChunks: [],
+    recordingStartTime: 0,
+    recordingTimer: null,
+    activeStreams: [],
+  });
 
   const stopRecordingStreams = useCallback((): void => {
-    activeStreamsRef.current.forEach((stream) => {
+    refs.current.activeStreams.forEach((stream) => {
       stream.getTracks().forEach((track) => track.stop());
     });
-    activeStreamsRef.current = [];
+    refs.current.activeStreams = [];
 
-    if (recordingTimerRef.current !== null) {
-      window.clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
+    if (refs.current.recordingTimer !== null) {
+      window.clearInterval(refs.current.recordingTimer);
+      refs.current.recordingTimer = null;
     }
   }, []);
 
@@ -45,10 +57,17 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
       }
 
       const selectedSourceId = sources[0].id;
-      const { includeMicrophone } = recordingState;
+
+      // Read includeMicrophone from current state via callback
+      // This avoids stale closure issues
+      let includeMicrophone = false;
+      setRecordingState((prev) => {
+        includeMicrophone = prev.includeMicrophone;
+        return prev;
+      });
 
       stopRecordingStreams();
-      recordedChunksRef.current = [];
+      refs.current.recordedChunks = [];
 
       const systemStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -67,7 +86,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         },
       });
 
-      activeStreamsRef.current.push(systemStream);
+      refs.current.activeStreams.push(systemStream);
       systemStream.getVideoTracks().forEach((track) => track.stop());
 
       let finalStream: MediaStream;
@@ -79,7 +98,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
             noiseSuppression: true,
           },
         });
-        activeStreamsRef.current.push(micStream);
+        refs.current.activeStreams.push(micStream);
 
         const audioContext = new AudioContext();
         const destination = audioContext.createMediaStreamDestination();
@@ -101,14 +120,14 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
 
       mediaRecorder.ondataavailable = (event): void => {
         if (event.data.size > 0) {
-          recordedChunksRef.current.push(event.data);
+          refs.current.recordedChunks.push(event.data);
         }
       };
 
       mediaRecorder.onstop = async (): Promise<void> => {
         stopRecordingStreams();
 
-        const blob = new Blob(recordedChunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(refs.current.recordedChunks, { type: 'audio/webm' });
         const arrayBuffer = await blob.arrayBuffer();
 
         setRecordingState((prev) => ({ ...prev, status: 'saving' }));
@@ -138,10 +157,10 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         }
       };
 
-      mediaRecorderRef.current = mediaRecorder;
+      refs.current.mediaRecorder = mediaRecorder;
       mediaRecorder.start(1000);
 
-      recordingStartTimeRef.current = Date.now();
+      refs.current.recordingStartTime = Date.now();
       setRecordingState((prev) => ({
         ...prev,
         status: 'recording',
@@ -149,8 +168,8 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         error: undefined,
       }));
 
-      recordingTimerRef.current = window.setInterval(() => {
-        const elapsed = Date.now() - recordingStartTimeRef.current;
+      refs.current.recordingTimer = window.setInterval(() => {
+        const elapsed = Date.now() - refs.current.recordingStartTime;
         setRecordingState((prev) => ({ ...prev, durationMs: elapsed }));
       }, 100);
     } catch (error) {
@@ -162,14 +181,14 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         error: error instanceof Error ? error.message : 'Failed to start recording.',
       }));
     }
-  }, [recordingState.includeMicrophone, stopRecordingStreams, setInfoMessage]);
+  }, [stopRecordingStreams, setInfoMessage]);
 
   const stopRecording = useCallback((): void => {
-    const recorder = mediaRecorderRef.current;
+    const recorder = refs.current.mediaRecorder;
     if (recorder && recorder.state !== 'inactive') {
       recorder.stop();
     }
-    mediaRecorderRef.current = null;
+    refs.current.mediaRecorder = null;
   }, []);
 
   const handleToggleMicrophone = useCallback((enabled: boolean): void => {
