@@ -7,7 +7,6 @@ import {
   PresetType,
   PRESETS,
   DEFAULT_ANALYSIS_STATE,
-  DEFAULT_TRANSCRIPTION_SETTINGS,
 } from './types';
 import { normalizePath } from './utils/format';
 import { useRecording } from './hooks/useRecording';
@@ -19,12 +18,16 @@ import {
   ResultsPanel,
 } from './components';
 
+const DEFAULT_TRANSCRIPTION: TranscriptionSettings = {
+  enabled: true,
+  language: 'auto',
+};
+
 function App(): JSX.Element {
   const [selectedPreset, setSelectedPreset] = useState<PresetType>('meeting');
   const [options, setOptions] = useState<AnalysisOptions>(PRESETS.meeting.options);
-  const [transcriptionSettings, setTranscriptionSettings] = useState<TranscriptionSettings>(
-    DEFAULT_TRANSCRIPTION_SETTINGS,
-  );
+  const [transcriptionSettings, setTranscriptionSettings] =
+    useState<TranscriptionSettings>(DEFAULT_TRANSCRIPTION);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [analysisState, setAnalysisState] = useState<AnalysisState>(DEFAULT_ANALYSIS_STATE);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
@@ -35,12 +38,10 @@ function App(): JSX.Element {
 
   const {
     recordingState,
-    loadRecordingSources,
     startRecording,
     stopRecording,
     stopRecordingStreams,
     handleToggleMicrophone,
-    handleSelectSource,
     handleResetRecording,
   } = useRecording(setInfoMessage);
 
@@ -143,15 +144,13 @@ function App(): JSX.Element {
     try {
       const result = await api.selectMediaSources({ allowMultiple: true });
       if (result.canceled) return;
-      setSelectedFiles(result.filePaths);
+      setSelectedFiles((prev) => {
+        const newFiles = result.filePaths.filter((f) => !prev.includes(f));
+        return [...prev, ...newFiles];
+      });
       setAnalysisState(DEFAULT_ANALYSIS_STATE);
       cleanupPreviewUrls();
       setPreviewSources({});
-      setInfoMessage(
-        result.filePaths.length > 1
-          ? `${result.filePaths.length} files loaded.`
-          : `File selected: ${normalizePath(result.filePaths[0])}`,
-      );
     } catch (error) {
       console.error('File selection failed', error);
       setAnalysisState({
@@ -160,6 +159,10 @@ function App(): JSX.Element {
         analyses: {},
       });
     }
+  };
+
+  const handleRemoveFile = (file: string): void => {
+    setSelectedFiles((prev) => prev.filter((f) => f !== file));
   };
 
   const handlePresetChange = (preset: PresetType): void => {
@@ -172,10 +175,6 @@ function App(): JSX.Element {
     if (selectedPreset !== 'custom') {
       setSelectedPreset('custom');
     }
-  };
-
-  const handleTranscriptionToggle = (enabled: boolean): void => {
-    setTranscriptionSettings((current) => ({ ...current, enabled }));
   };
 
   const handleTranscriptionLanguageChange = (language: string): void => {
@@ -208,7 +207,7 @@ function App(): JSX.Element {
           inputPath: filePath,
           options,
           transcription: {
-            enabled: transcriptionSettings.enabled,
+            enabled: true,
             language: transcriptionSettings.language,
             enableWords: true,
           },
@@ -242,61 +241,57 @@ function App(): JSX.Element {
     }
   };
 
-  const handleUseRecording = useCallback((): void => {
-    const { savedFilePath } = recordingState;
-    if (!savedFilePath) return;
-    setSelectedFiles((prev) => {
-      if (prev.includes(savedFilePath)) return prev;
-      return [...prev, savedFilePath];
-    });
-    setAnalysisState(DEFAULT_ANALYSIS_STATE);
-    cleanupPreviewUrls();
-    setPreviewSources({});
-    setInfoMessage(`File added: ${savedFilePath}`);
-  }, [recordingState, cleanupPreviewUrls]);
+  // Auto-add recording to files when done
+  useEffect(() => {
+    if (recordingState.status === 'done' && recordingState.savedFilePath) {
+      setSelectedFiles((prev) => {
+        if (prev.includes(recordingState.savedFilePath!)) return prev;
+        return [...prev, recordingState.savedFilePath!];
+      });
+    }
+  }, [recordingState.status, recordingState.savedFilePath]);
 
   return (
     <div className="page">
       <header className="page__header">
         <h1>VoxScribe</h1>
-        <p className="page__subtitle">Record meetings, remove silence, transcribe locally.</p>
       </header>
 
       <main className="page__content">
-        <FileSelector selectedFiles={selectedFiles} onSelectFiles={handleSelectFiles} />
+        <div className="panels-row">
+          <FileSelector
+            selectedFiles={selectedFiles}
+            onSelectFiles={handleSelectFiles}
+            onRemoveFile={handleRemoveFile}
+          />
 
-        <RecordingPanel
-          recordingState={recordingState}
-          onLoadSources={loadRecordingSources}
-          onStartRecording={startRecording}
-          onStopRecording={stopRecording}
-          onSelectSource={handleSelectSource}
-          onToggleMicrophone={handleToggleMicrophone}
-          onResetRecording={handleResetRecording}
-          onUseRecording={handleUseRecording}
-        />
+          <RecordingPanel
+            recordingState={recordingState}
+            onStartRecording={startRecording}
+            onStopRecording={stopRecording}
+            onToggleMicrophone={handleToggleMicrophone}
+            onResetRecording={handleResetRecording}
+          />
+        </div>
 
-        <ParametersPanel
-          selectedPreset={selectedPreset}
-          options={options}
-          onPresetChange={handlePresetChange}
-          onOptionChange={handleOptionChange}
-        />
+        <div className="panels-row">
+          <ParametersPanel
+            selectedPreset={selectedPreset}
+            options={options}
+            onPresetChange={handlePresetChange}
+            onOptionChange={handleOptionChange}
+          />
 
-        <TranscriptionPanel
-          settings={transcriptionSettings}
-          onToggle={handleTranscriptionToggle}
-          onLanguageChange={handleTranscriptionLanguageChange}
-        />
+          <TranscriptionPanel
+            settings={transcriptionSettings}
+            onLanguageChange={handleTranscriptionLanguageChange}
+          />
+        </div>
 
         <section className="card">
-          <header className="card__header">
-            <h2>Analysis</h2>
-            <p>Automatically detect and extract speech segments.</p>
-          </header>
-          <div className="card__body">
+          <div className="card__body card__body--centered">
             <button
-              className="btn btn-primary"
+              className="btn btn-primary btn-lg"
               onClick={handleAnalyze}
               type="button"
               disabled={!hasFiles || isAnalyzing}
@@ -308,16 +303,16 @@ function App(): JSX.Element {
               <p className="message message--error">{analysisState.error}</p>
             )}
             {infoMessage && <p className="message message--info">{infoMessage}</p>}
-
-            <ResultsPanel
-              analysisState={analysisState}
-              previewSources={previewSources}
-              onOpenPath={handleOpenPath}
-              onCopyPath={handleCopyPath}
-              onDownloadChunks={handleDownloadChunks}
-            />
           </div>
         </section>
+
+        <ResultsPanel
+          analysisState={analysisState}
+          previewSources={previewSources}
+          onOpenPath={handleOpenPath}
+          onCopyPath={handleCopyPath}
+          onDownloadChunks={handleDownloadChunks}
+        />
       </main>
     </div>
   );

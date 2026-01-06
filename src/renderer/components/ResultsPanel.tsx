@@ -1,5 +1,15 @@
+import { useState, useCallback } from 'react';
 import { AnalysisState, ChunkExport } from '../types';
 import { formatMilliseconds, normalizePath, fileNameFromPath } from '../utils/format';
+
+function getTranscriptionText(transcriptions: { error?: string; text?: string }[]): string {
+  return (
+    transcriptions
+      .filter((t) => !t.error && t.text?.trim())
+      .map((t) => t.text!.trim())
+      .join(' ') || ''
+  );
+}
 
 type ResultsPanelProps = {
   analysisState: AnalysisState;
@@ -9,207 +19,217 @@ type ResultsPanelProps = {
   onDownloadChunks: (dirPath: string | null | undefined) => Promise<void>;
 };
 
+type TabType = 'transcription' | 'debug';
+
 export function ResultsPanel({
   analysisState,
-  previewSources,
   onOpenPath,
   onCopyPath,
   onDownloadChunks,
 }: ResultsPanelProps): JSX.Element | null {
+  const [activeTab, setActiveTab] = useState<TabType>('transcription');
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopyTranscription = useCallback(async (key: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 2000);
+    } catch (error) {
+      console.error('Failed to copy:', error);
+    }
+  }, []);
+
   if (analysisState.status !== 'done') {
     return null;
   }
 
+  const analyses = Object.entries(analysisState.analyses);
+
   return (
     <div className="results">
-      {Object.entries(analysisState.analyses).map(([key, analysis]) => {
-        const sources = previewSources[key] ?? {};
+      <div className="tabs">
+        <button
+          className={`tab ${activeTab === 'transcription' ? 'tab--active' : ''}`}
+          onClick={() => setActiveTab('transcription')}
+          type="button"
+        >
+          Transcription
+        </button>
+        <button
+          className={`tab ${activeTab === 'debug' ? 'tab--active' : ''}`}
+          onClick={() => setActiveTab('debug')}
+          type="button"
+        >
+          Debug
+        </button>
+      </div>
 
-        return (
-          <article key={key} className="result">
-            <header className="result__header">
-              <h3>{normalizePath(analysis.sourcePath)}</h3>
-              <p>
-                Duration: {analysis.durationMs ? formatMilliseconds(analysis.durationMs) : 'n/a'}
-              </p>
-            </header>
+      {activeTab === 'transcription' && (
+        <div className="tab-content">
+          {analyses.map(([key, analysis]) => (
+            <article key={key} className="result">
+              <header className="result__header">
+                <h3>{fileNameFromPath(analysis.sourcePath)}</h3>
+                <span className="result__duration">
+                  {analysis.durationMs ? formatMilliseconds(analysis.durationMs) : ''}
+                </span>
+              </header>
 
-            {analysis.warnings.length > 0 && (
-              <ul className="warnings">
-                {analysis.warnings.map((warning, index) => (
-                  <li key={index} className="warnings__item">
-                    {warning}
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {analysis.chunks.length > 0 ? (
-              <table className="chunks">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Start</th>
-                    <th>End</th>
-                    <th>Duration</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {analysis.chunks.map((chunk, index) => (
-                    <tr key={chunk.id}>
-                      <td>{index + 1}</td>
-                      <td>{formatMilliseconds(chunk.startMs)}</td>
-                      <td>{formatMilliseconds(chunk.endMs)}</td>
-                      <td>{formatMilliseconds(chunk.durationMs)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p className="placeholder">No segments detected.</p>
-            )}
-
-            <div className="previews">
-              <div className="preview">
-                <span className="preview__title">Before cleanup</span>
-                {analysis.previews.original && sources.original ? (
-                  <>
-                    <audio controls className="preview__audio" src={sources.original} />
-                    <span className="preview__meta">
-                      {fileNameFromPath(analysis.previews.original.path)}
-                    </span>
-                  </>
-                ) : (
-                  <p className="placeholder">Original preview not available.</p>
-                )}
-              </div>
-              <div className="preview">
-                <span className="preview__title">After silence removal</span>
-                {analysis.previews.trimmed && sources.trimmed ? (
-                  <>
-                    <audio controls className="preview__audio" src={sources.trimmed} />
-                    <span className="preview__meta">
-                      {fileNameFromPath(analysis.previews.trimmed.path)}
-                    </span>
-                  </>
-                ) : (
-                  <p className="placeholder">Cleaned preview not available.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="result__exports">
-              <div className="result__exports-header">
-                <h4>WAV Chunks (STT-ready)</h4>
-                <div className="result__exports-actions">
-                  <button
-                    className="btn btn-tertiary"
-                    type="button"
-                    onClick={() => onOpenPath(analysis.outputDir)}
-                  >
-                    Open export folder
-                  </button>
-                  <button
-                    className="btn btn-tertiary"
-                    type="button"
-                    disabled={analysis.chunkExports.length === 0}
-                    onClick={() => onDownloadChunks(analysis.chunkExportsDirPath)}
-                  >
-                    Download all chunks
-                  </button>
-                </div>
-              </div>
-              <p className="exports__hint">
-                WAV files are mono 16kHz, ready for Whisper and other STT engines.
-              </p>
-              {analysis.chunkExports.length > 0 ? (
-                <ul className="exports">
-                  {analysis.chunkExports.map((chunkExport: ChunkExport, index: number) => (
-                    <li key={chunkExport.id} className="exports__item">
-                      <div className="exports__meta">
-                        <strong>Chunk {index + 1}</strong>
-                        <span>
-                          {formatMilliseconds(chunkExport.startMs)} &rarr;{' '}
-                          {formatMilliseconds(chunkExport.endMs)} |{' '}
-                          {formatMilliseconds(chunkExport.durationMs)}
-                        </span>
-                      </div>
-                      <code className="exports__path">{chunkExport.wavPath}</code>
-                      <div className="exports__actions">
-                        <button
-                          className="btn btn-tertiary"
-                          type="button"
-                          onClick={() => onCopyPath(chunkExport.wavPath)}
-                        >
-                          Copy path
-                        </button>
-                        <button
-                          className="btn btn-tertiary"
-                          type="button"
-                          onClick={() => onOpenPath(chunkExport.wavPath)}
-                        >
-                          Open
-                        </button>
-                      </div>
+              {analysis.warnings.length > 0 && (
+                <ul className="warnings">
+                  {analysis.warnings.map((warning, index) => (
+                    <li key={index} className="warnings__item">
+                      {warning}
                     </li>
                   ))}
                 </ul>
-              ) : (
-                <p className="placeholder">No chunks exported (adjust settings and retry).</p>
               )}
-            </div>
 
-            <div className="result__exports">
-              <div className="result__exports-header">
-                <h4>Transcription</h4>
-              </div>
               {analysis.transcription.enabled ? (
-                <>
+                <div className="transcription-result">
                   {analysis.transcriptions.length > 0 ? (
-                    <div className="transcriptions">
-                      {analysis.transcriptions.map((entry, index) => (
-                        <div key={entry.chunkId} className="transcription-entry">
-                          <div className="transcription-entry__header">
-                            <strong>Segment {index + 1}</strong>
-                            {analysis.chunkExports[index] && (
-                              <span className="transcription-entry__time">
-                                {formatMilliseconds(analysis.chunkExports[index].startMs)} &rarr;{' '}
-                                {formatMilliseconds(analysis.chunkExports[index].endMs)}
-                              </span>
-                            )}
-                          </div>
-                          {entry.error ? (
-                            <p className="message message--error">{entry.error}</p>
-                          ) : (
-                            <p className="transcription-entry__text">
-                              {entry.text && entry.text.trim().length > 0
-                                ? entry.text.trim()
-                                : '(silence or inaudible)'}
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                      <div className="transcription-full">
-                        <strong>Full transcription:</strong>
-                        <p className="transcription-full__text">
-                          {analysis.transcriptions
-                            .filter((t) => !t.error && t.text?.trim())
-                            .map((t) => t.text.trim())
-                            .join(' ') || '(no text transcribed)'}
-                        </p>
-                      </div>
-                    </div>
+                    (() => {
+                      const text = getTranscriptionText(analysis.transcriptions);
+                      return text ? (
+                        <>
+                          <div className="transcription-text">{text}</div>
+                          <button
+                            className="btn btn-tertiary btn-sm copy-btn"
+                            type="button"
+                            onClick={() => handleCopyTranscription(key, text)}
+                          >
+                            {copiedKey === key ? 'Copied!' : 'Copy'}
+                          </button>
+                        </>
+                      ) : (
+                        <p className="placeholder">(no speech detected)</p>
+                      );
+                    })()
                   ) : (
-                    <p className="placeholder">No transcription results for these segments.</p>
+                    <p className="placeholder">No transcription results.</p>
                   )}
-                </>
+                </div>
               ) : (
-                <p className="placeholder">Transcription was disabled for this analysis.</p>
+                <p className="placeholder">Transcription was disabled.</p>
               )}
-            </div>
-          </article>
-        );
-      })}
+            </article>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'debug' && (
+        <div className="tab-content">
+          {analyses.map(([key, analysis]) => (
+            <article key={key} className="result">
+              <header className="result__header">
+                <h3>{fileNameFromPath(analysis.sourcePath)}</h3>
+              </header>
+
+              <div className="debug-section">
+                <h4>Segments ({analysis.chunks.length})</h4>
+                {analysis.chunks.length > 0 ? (
+                  <table className="chunks">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Duration</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analysis.chunks.map((chunk, index) => (
+                        <tr key={chunk.id}>
+                          <td>{index + 1}</td>
+                          <td>{formatMilliseconds(chunk.startMs)}</td>
+                          <td>{formatMilliseconds(chunk.endMs)}</td>
+                          <td>{formatMilliseconds(chunk.durationMs)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="placeholder">No segments detected.</p>
+                )}
+              </div>
+
+              <div className="debug-section">
+                <div className="debug-section__header">
+                  <h4>WAV Chunks</h4>
+                  <div className="debug-section__actions">
+                    <button
+                      className="btn btn-tertiary btn-sm"
+                      type="button"
+                      onClick={() => onOpenPath(analysis.outputDir)}
+                    >
+                      Open folder
+                    </button>
+                    <button
+                      className="btn btn-tertiary btn-sm"
+                      type="button"
+                      disabled={analysis.chunkExports.length === 0}
+                      onClick={() => onDownloadChunks(analysis.chunkExportsDirPath)}
+                    >
+                      Download ZIP
+                    </button>
+                  </div>
+                </div>
+                {analysis.chunkExports.length > 0 ? (
+                  <ul className="exports exports--compact">
+                    {analysis.chunkExports.map((chunkExport: ChunkExport, index: number) => (
+                      <li key={chunkExport.id} className="exports__item">
+                        <span className="exports__name">Chunk {index + 1}</span>
+                        <span className="exports__time">
+                          {formatMilliseconds(chunkExport.startMs)} &rarr;{' '}
+                          {formatMilliseconds(chunkExport.endMs)}
+                        </span>
+                        <button
+                          className="btn btn-tertiary btn-sm"
+                          type="button"
+                          onClick={() => onCopyPath(chunkExport.wavPath)}
+                        >
+                          Copy
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="placeholder">No chunks exported.</p>
+                )}
+              </div>
+
+              <div className="debug-section">
+                <h4>Transcription per segment</h4>
+                {analysis.transcriptions.length > 0 ? (
+                  <div className="transcriptions-debug">
+                    {analysis.transcriptions.map((entry, index) => (
+                      <div key={entry.chunkId} className="transcription-debug-entry">
+                        <span className="transcription-debug-entry__num">{index + 1}</span>
+                        {entry.error ? (
+                          <span className="message message--error">{entry.error}</span>
+                        ) : (
+                          <span className="transcription-debug-entry__text">
+                            {entry.text?.trim() || '(silence)'}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="placeholder">No transcription data.</p>
+                )}
+              </div>
+
+              <div className="debug-section">
+                <h4>Paths</h4>
+                <code className="debug-path">{normalizePath(analysis.sourcePath)}</code>
+                <code className="debug-path">{normalizePath(analysis.outputDir)}</code>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

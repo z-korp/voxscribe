@@ -1,8 +1,4 @@
-import {
-  downloadWhisperModel,
-  installWhisperCpp,
-  transcribe
-} from '@remotion/install-whisper-cpp';
+import { downloadWhisperModel, installWhisperCpp, transcribe } from '@remotion/install-whisper-cpp';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
@@ -47,7 +43,7 @@ export class WhisperService {
       console.log('Installing whisper.cpp binaries...');
       await installWhisperCpp({
         to: this.whisperPath,
-        version: this.whisperVersion
+        version: this.whisperVersion,
       });
       console.log('whisper.cpp installed successfully');
     }
@@ -66,7 +62,7 @@ export class WhisperService {
       await downloadWhisperModel({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         model: modelName as any, // Type assertion for model name
-        folder: this.whisperPath
+        folder: this.whisperPath,
       });
       console.log(`Model ${modelName} downloaded successfully`);
     }
@@ -77,7 +73,7 @@ export class WhisperService {
    */
   async transcribe(
     audioFilePath: string,
-    options: WhisperOptions = {}
+    options: WhisperOptions = {},
   ): Promise<WhisperTranscriptSegment[]> {
     const { modelName = 'medium', language = 'auto' } = options;
 
@@ -101,17 +97,22 @@ export class WhisperService {
       console.log('Starting Whisper transcription:', {
         file: audioFilePath,
         model: fullModelName,
-        language
+        language,
       });
 
       // Transcribe using @remotion/install-whisper-cpp
+      // IMPORTANT: translateToEnglish must be false to get transcription in original language
       const result = await transcribe({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        model: fullModelName as any, // Type assertion
-        whisperPath: this.whisperPath,
         inputPath: audioFilePath,
+        whisperPath: this.whisperPath,
+        whisperCppVersion: this.whisperVersion,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        model: fullModelName as any,
         tokenLevelTimestamps: true,
-        whisperCppVersion: this.whisperVersion
+        translateToEnglish: false, // DO NOT translate - transcribe in original language
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        language: (language === 'auto' ? null : language) as any, // null = auto-detect
+        printOutput: true, // Debug: show whisper output
       });
 
       console.log('Whisper transcription complete');
@@ -129,20 +130,31 @@ export class WhisperService {
         'Whisper result keys:',
         Object.keys(result),
         'transcription is array:',
-        Array.isArray(result.transcription)
+        Array.isArray(result.transcription),
       );
 
       if (result.transcription && Array.isArray(result.transcription)) {
         for (const item of result.transcription) {
           // item format: {timestamps: {from: "00:00:00", to: "00:00:05"}, text: string, ...}
-          const text = typeof item.text === 'string' ? item.text.trim() : '';
+          let text = typeof item.text === 'string' ? item.text.trim() : '';
           const startTime = item.timestamps?.from || '00:00:00.000';
           const endTime = item.timestamps?.to || '00:00:00.000';
+
+          // Filter out Whisper metadata messages like [French translation], [BLANK_AUDIO], etc.
+          text = text
+            .replace(/\[\s*[A-Za-z_\s]+\s*\]/g, '') // Remove [ANY_TEXT] patterns
+            .replace(/\(\s*[A-Za-z_\s]+\s*\)/g, '') // Remove (ANY_TEXT) patterns
+            .trim();
+
+          // Skip empty segments after filtering
+          if (!text) {
+            continue;
+          }
 
           segments.push({
             start: startTime,
             end: endTime,
-            speech: text
+            speech: text,
           });
         }
       }
@@ -167,8 +179,8 @@ export class WhisperService {
           {
             start: firstStart,
             end: lastEnd,
-            speech: fullText.trim()
-          }
+            speech: fullText.trim(),
+          },
         ];
       }
 
@@ -176,7 +188,7 @@ export class WhisperService {
     } catch (error) {
       console.error('Whisper transcription failed:', error);
       throw new Error(
-        `Transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
   }

@@ -21,7 +21,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
     }
   }, []);
 
-  const loadRecordingSources = useCallback(async (): Promise<void> => {
+  const startRecording = useCallback(async (): Promise<void> => {
     const api = window.electronAPI;
     if (!api?.getRecordingSources) {
       setRecordingState((prev) => ({
@@ -33,36 +33,20 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
     }
 
     try {
-      setRecordingState((prev) => ({ ...prev, status: 'selecting' }));
+      // Get sources and auto-select the first one (usually "Entire Screen")
       const sources = await api.getRecordingSources();
-      setRecordingState((prev) => ({
-        ...prev,
-        sources,
-        selectedSourceId: sources.length > 0 ? sources[0].id : null,
-      }));
-    } catch (error) {
-      console.error('Failed to load sources', error);
-      setRecordingState((prev) => ({
-        ...prev,
-        status: 'error',
-        error: 'Failed to load audio sources.',
-      }));
-    }
-  }, []);
+      if (sources.length === 0) {
+        setRecordingState((prev) => ({
+          ...prev,
+          status: 'error',
+          error: 'No audio sources available.',
+        }));
+        return;
+      }
 
-  const startRecording = useCallback(async (): Promise<void> => {
-    const { selectedSourceId, includeMicrophone } = recordingState;
+      const selectedSourceId = sources[0].id;
+      const { includeMicrophone } = recordingState;
 
-    if (!selectedSourceId) {
-      setRecordingState((prev) => ({
-        ...prev,
-        status: 'error',
-        error: 'Please select a source.',
-      }));
-      return;
-    }
-
-    try {
       stopRecordingStreams();
       recordedChunksRef.current = [];
 
@@ -130,12 +114,12 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         setRecordingState((prev) => ({ ...prev, status: 'saving' }));
 
         try {
-          const api = window.electronAPI;
-          if (!api?.saveRecording) {
+          const saveApi = window.electronAPI;
+          if (!saveApi?.saveRecording) {
             throw new Error('Save API is not available.');
           }
 
-          const result = await api.saveRecording({ buffer: arrayBuffer });
+          const result = await saveApi.saveRecording({ buffer: arrayBuffer });
 
           setRecordingState((prev) => ({
             ...prev,
@@ -178,7 +162,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         error: error instanceof Error ? error.message : 'Failed to start recording.',
       }));
     }
-  }, [recordingState, stopRecordingStreams, setInfoMessage]);
+  }, [recordingState.includeMicrophone, stopRecordingStreams, setInfoMessage]);
 
   const stopRecording = useCallback((): void => {
     const recorder = mediaRecorderRef.current;
@@ -192,10 +176,6 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
     setRecordingState((prev) => ({ ...prev, includeMicrophone: enabled }));
   }, []);
 
-  const handleSelectSource = useCallback((sourceId: string): void => {
-    setRecordingState((prev) => ({ ...prev, selectedSourceId: sourceId }));
-  }, []);
-
   const handleResetRecording = useCallback((): void => {
     stopRecordingStreams();
     setRecordingState(DEFAULT_RECORDING_STATE);
@@ -204,12 +184,10 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
   return {
     recordingState,
     setRecordingState,
-    loadRecordingSources,
     startRecording,
     stopRecording,
     stopRecordingStreams,
     handleToggleMicrophone,
-    handleSelectSource,
     handleResetRecording,
   };
 }

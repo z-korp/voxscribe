@@ -14,19 +14,14 @@ describe('App', () => {
       expect(screen.getByText(/VoxScribe/i)).toBeInTheDocument();
     });
 
-    it('shows no files selected placeholder', () => {
+    it('renders add files button', () => {
       render(<App />);
-      expect(screen.getByText(/No files selected/i)).toBeInTheDocument();
-    });
-
-    it('renders the file selection button', () => {
-      render(<App />);
-      expect(screen.getByText(/Choose files/i)).toBeInTheDocument();
+      expect(screen.getByText(/Add files/i)).toBeInTheDocument();
     });
 
     it('renders the recording section', () => {
       render(<App />);
-      expect(screen.getByRole('heading', { name: /Record Meeting/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Record/i })).toBeInTheDocument();
     });
 
     it('renders the settings section', () => {
@@ -37,11 +32,6 @@ describe('App', () => {
     it('renders the transcription section', () => {
       render(<App />);
       expect(screen.getByRole('heading', { name: /Transcription/i })).toBeInTheDocument();
-    });
-
-    it('renders the analysis section', () => {
-      render(<App />);
-      expect(screen.getByRole('heading', { name: /Analysis/i })).toBeInTheDocument();
     });
   });
 
@@ -59,11 +49,6 @@ describe('App', () => {
   });
 
   describe('Transcription Settings', () => {
-    it('renders transcription toggle', () => {
-      render(<App />);
-      expect(screen.getByText(/Enable transcription/i)).toBeInTheDocument();
-    });
-
     it('renders language selector', () => {
       render(<App />);
       expect(screen.getByDisplayValue(/Auto-detect/i)).toBeInTheDocument();
@@ -91,14 +76,6 @@ describe('App', () => {
       await waitFor(() => {
         const presetSelect = screen.getByDisplayValue(/Meeting/i);
         expect(presetSelect).toBeInTheDocument();
-      });
-    });
-
-    it('shows preset description', async () => {
-      render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Optimized for video calls/i)).toBeInTheDocument();
       });
     });
   });
