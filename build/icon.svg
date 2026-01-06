@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#38bdf8"/>
+      <stop offset="100%" style="stop-color:#22d3ee"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="200" fill="url(#bg)"/>
+  <!-- Waveform bars -->
+  <g fill="#0f172a" opacity="0.9">
+    <rect x="200" y="400" width="60" height="224" rx="30"/>
+    <rect x="320" y="300" width="60" height="424" rx="30"/>
+    <rect x="440" y="200" width="60" height="624" rx="30"/>
+    <rect x="560" y="280" width="60" height="464" rx="30"/>
+    <rect x="680" y="350" width="60" height="324" rx="30"/>
+    <rect x="800" y="420" width="60" height="184" rx="30"/>
+  </g>
+  <!-- Microphone circle -->
+  <circle cx="512" cy="850" r="80" fill="#0f172a" opacity="0.3"/>
+</svg>
