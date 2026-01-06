@@ -8,6 +8,8 @@ import {
   type MediaAnalysisRequest,
   type MediaAnalysisResponse,
 } from './media-chunker';
+import { AudioDeviceService } from './audio-device-service';
+import type { AudioDevice, CaptureStrategy } from './types/audio-devices';
 
 if (process.env['WSL_DISTRO_NAME']) {
   app.disableHardwareAcceleration();
@@ -17,6 +19,7 @@ if (process.env['WSL_DISTRO_NAME']) {
 const isDevelopment = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 const mediaService = new MediaChunkService();
+const audioDeviceService = new AudioDeviceService();
 
 async function zipDirectory(sourceDir: string, outPath: string): Promise<void> {
   await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
@@ -243,6 +246,11 @@ ipcMain.handle(
     };
   },
 );
+
+// Audio device detection handlers
+ipcMain.handle('audio:recommend-strategy', async (_, devices: AudioDevice[]) => {
+  return await audioDeviceService.recommendCaptureStrategy(devices);
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

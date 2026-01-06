@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { FileFilter } from 'electron';
+import type { AudioDevice, CaptureStrategy } from '../main/types/audio-devices';
 
 const api = {
   ping: (): Promise<string> => ipcRenderer.invoke('system:ping'),
@@ -136,6 +137,10 @@ const api = {
     filePath: string;
     fileUrl: string;
   }> => ipcRenderer.invoke('recording:save', options),
+
+  // Audio device detection APIs
+  recommendCaptureStrategy: (devices: AudioDevice[]): Promise<CaptureStrategy> =>
+    ipcRenderer.invoke('audio:recommend-strategy', devices),
 };
 
 if (process.contextIsolated) {
