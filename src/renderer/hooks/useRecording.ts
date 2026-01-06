@@ -331,13 +331,63 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
 
       let finalStream: MediaStream;
 
-      // GENERIC APPROACH: Try system audio loopback first (Windows 10 1903+)
-      // This works for ALL users without any configuration
+      // GENERIC APPROACH: Use getDisplayMedia for system audio (Windows 10 1903+)
+      // This MUST be called synchronously from user gesture (button click)
+      console.log('🎤 Requesting screen share with system audio...');
+
       try {
-        finalStream = await startSystemAudioCapture(includeMicrophone);
-        console.log('✅ Using system audio loopback (generic method)');
-      } catch (error) {
-        console.warn('System audio loopback failed, trying alternative methods:', error);
+        // Request screen share with audio - this will show the native picker
+        const displayStream = await navigator.mediaDevices.getDisplayMedia({
+          audio: true, // Request system audio
+          video: true, // Required but we'll stop it
+        });
+
+        console.log('✅ Display media captured');
+        refs.current.activeStreams.push(displayStream);
+
+        // Stop video track immediately (we only want audio)
+        displayStream.getVideoTracks().forEach((track) => track.stop());
+
+        // Check if we got audio
+        const audioTracks = displayStream.getAudioTracks();
+        if (audioTracks.length === 0) {
+          throw new Error('No audio tracks captured. Please check "Share audio" in the dialog.');
+        }
+
+        console.log(`✅ Got ${audioTracks.length} audio track(s)`);
+
+        if (includeMicrophone) {
+          const micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+            },
+          });
+          refs.current.activeStreams.push(micStream);
+
+          const audioContext = new AudioContext();
+          refs.current.audioContext = audioContext;
+
+          const destination = audioContext.createMediaStreamDestination();
+          const systemSource = audioContext.createMediaStreamSource(displayStream);
+          const micSource = audioContext.createMediaStreamSource(micStream);
+
+          systemSource.connect(destination);
+          micSource.connect(destination);
+
+          finalStream = destination.stream;
+        } else {
+          finalStream = new MediaStream(displayStream.getAudioTracks());
+        }
+
+        setInfoMessage('✅ Capturing all system audio (Discord, YouTube, everything!)');
+      } catch (error: unknown) {
+        // User cancelled or getDisplayMedia failed
+        if (error instanceof Error && error.name === 'NotAllowedError') {
+          throw new Error('Screen share cancelled. Please allow screen sharing to record audio.');
+        }
+
+        console.warn('getDisplayMedia failed, trying fallback methods:', error);
 
         // Fallback: Get capture strategy
         const { strategy } = await getCaptureStrategy();
@@ -438,7 +488,6 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
     }
   }, [
     stopRecordingStreams,
-    startSystemAudioCapture,
     getCaptureStrategy,
     startLoopbackCapture,
     startMultiSourceCapture,
