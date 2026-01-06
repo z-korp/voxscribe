@@ -4,8 +4,9 @@ import {
   AnalysisState,
   MediaAnalysis,
   TranscriptionSettings,
+  PresetType,
+  PRESETS,
   DEFAULT_ANALYSIS_STATE,
-  DEFAULT_TRANSCRIPTION_SETTINGS,
 } from './types';
 import { normalizePath } from './utils/format';
 import { useRecording } from './hooks/useRecording';
@@ -17,12 +18,15 @@ import {
   ResultsPanel,
 } from './components';
 
+const DEFAULT_TRANSCRIPTION: TranscriptionSettings = {
+  language: 'auto',
+};
+
 function App(): JSX.Element {
-  const [pingResult, setPingResult] = useState<string>('...');
-  const [options, setOptions] = useState<AnalysisOptions | null>(null);
-  const [transcriptionSettings, setTranscriptionSettings] = useState<TranscriptionSettings>(
-    DEFAULT_TRANSCRIPTION_SETTINGS,
-  );
+  const [selectedPreset, setSelectedPreset] = useState<PresetType>('meeting');
+  const [options, setOptions] = useState<AnalysisOptions>(PRESETS.meeting.options);
+  const [transcriptionSettings, setTranscriptionSettings] =
+    useState<TranscriptionSettings>(DEFAULT_TRANSCRIPTION);
   const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
   const [analysisState, setAnalysisState] = useState<AnalysisState>(DEFAULT_ANALYSIS_STATE);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
@@ -33,12 +37,10 @@ function App(): JSX.Element {
 
   const {
     recordingState,
-    loadRecordingSources,
     startRecording,
     stopRecording,
     stopRecordingStreams,
     handleToggleMicrophone,
-    handleSelectSource,
     handleResetRecording,
   } = useRecording(setInfoMessage);
 
@@ -69,77 +71,6 @@ function App(): JSX.Element {
   }, [cleanupPreviewUrls]);
 
   useEffect(() => {
-    let canceled = false;
-    const api = window.electronAPI;
-    if (!api?.ping) {
-      setPingResult('electronAPI non disponible');
-      return;
-    }
-
-    void api
-      .ping()
-      .then((result) => {
-        if (!canceled) setPingResult(result);
-      })
-      .catch((error) => {
-        console.error('IPC ping failed', error);
-        if (!canceled) setPingResult('ping error');
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let canceled = false;
-    const api = window.electronAPI;
-    if (!api?.getDefaultAnalysisOptions) return;
-
-    void api
-      .getDefaultAnalysisOptions()
-      .then((defaults) => {
-        if (!canceled) setOptions(defaults);
-      })
-      .catch((error) => {
-        console.error('Failed to load default analysis options', error);
-        if (!canceled) setOptions(null);
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let canceled = false;
-    const api = window.electronAPI;
-    if (!api?.getDefaultTranscriptionOptions) return;
-
-    void api
-      .getDefaultTranscriptionOptions()
-      .then((defaults) => {
-        if (!canceled) {
-          setTranscriptionSettings({
-            enabled: defaults.enabled,
-            modelPath: defaults.modelPath ?? '',
-            language: 'fr',
-            sampleRate: defaults.sampleRate,
-            maxAlternatives: defaults.maxAlternatives,
-            enableWords: defaults.enableWords,
-          });
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to load default transcription options', error);
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     return () => {
       stopRecordingStreams();
     };
@@ -151,51 +82,51 @@ function App(): JSX.Element {
   const handleOpenPath = useCallback(async (targetPath: string) => {
     const api = window.electronAPI;
     if (!api?.openPath) {
-      setInfoMessage("Impossible d'ouvrir le chemin depuis cette interface.");
+      setInfoMessage('Cannot open path from this interface.');
       return;
     }
     try {
       await api.openPath(targetPath);
     } catch (error) {
       console.error('openPath failed', error);
-      setInfoMessage("Impossible d'ouvrir le chemin demande.");
+      setInfoMessage('Cannot open the requested path.');
     }
   }, []);
 
   const handleCopyPath = useCallback(async (targetPath: string) => {
     if (!navigator?.clipboard?.writeText) {
-      setInfoMessage('La copie dans le presse-papiers est indisponible.');
+      setInfoMessage('Clipboard is not available.');
       return;
     }
     try {
       await navigator.clipboard.writeText(targetPath);
-      setInfoMessage('Chemin copie dans le presse-papiers.');
+      setInfoMessage('Path copied to clipboard.');
     } catch (error) {
       console.error('clipboard error', error);
-      setInfoMessage('Copie du chemin impossible.');
+      setInfoMessage('Failed to copy path.');
     }
   }, []);
 
   const handleDownloadChunks = useCallback(async (directoryPath: string | null | undefined) => {
     if (!directoryPath) {
-      setInfoMessage('Aucun dossier de chunks disponible.');
+      setInfoMessage('No chunks folder available.');
       return;
     }
     const api = window.electronAPI;
     if (!api?.zipChunks) {
-      setInfoMessage('Telechargement indisponible dans cette interface.');
+      setInfoMessage('Download not available in this interface.');
       return;
     }
     try {
       const result = await api.zipChunks(directoryPath);
       if (result.canceled) {
-        setInfoMessage('Telechargement annule.');
+        setInfoMessage('Download cancelled.');
       } else if (result.filePath) {
-        setInfoMessage(`Archive sauvegardee : ${normalizePath(result.filePath)}`);
+        setInfoMessage(`Archive saved: ${normalizePath(result.filePath)}`);
       }
     } catch (error) {
       console.error('zipChunks failed', error);
-      setInfoMessage("Impossible de generer l'archive ZIP.");
+      setInfoMessage('Failed to generate ZIP archive.');
     }
   }, []);
 
@@ -204,7 +135,7 @@ function App(): JSX.Element {
     if (!api?.selectMediaSources) {
       setAnalysisState({
         status: 'error',
-        error: "L'API de selection de fichiers n'est pas disponible.",
+        error: 'File selection API is not available.',
         analyses: {},
       });
       return;
@@ -212,42 +143,44 @@ function App(): JSX.Element {
     try {
       const result = await api.selectMediaSources({ allowMultiple: true });
       if (result.canceled) return;
-      setSelectedFiles(result.filePaths);
+      setSelectedFiles((prev) => {
+        const newFiles = result.filePaths.filter((f) => !prev.includes(f));
+        return [...prev, ...newFiles];
+      });
       setAnalysisState(DEFAULT_ANALYSIS_STATE);
       cleanupPreviewUrls();
       setPreviewSources({});
-      setInfoMessage(
-        result.filePaths.length > 1
-          ? `${result.filePaths.length} fichiers charges.`
-          : `Fichier selectionne : ${normalizePath(result.filePaths[0])}`,
-      );
     } catch (error) {
       console.error('File selection failed', error);
       setAnalysisState({
         status: 'error',
-        error: 'Impossible de selectionner des fichiers.',
+        error: 'Failed to select files.',
         analyses: {},
       });
     }
   };
 
+  const handleRemoveFile = (file: string): void => {
+    setSelectedFiles((prev) => prev.filter((f) => f !== file));
+  };
+
+  const handlePresetChange = (preset: PresetType): void => {
+    setSelectedPreset(preset);
+    setOptions(PRESETS[preset].options);
+  };
+
   const handleOptionChange = (key: keyof AnalysisOptions, value: number): void => {
-    setOptions((current) => {
-      if (!current) return current;
-      return { ...current, [key]: value };
-    });
-  };
-
-  const handleTranscriptionToggle = (enabled: boolean): void => {
-    setTranscriptionSettings((current) => ({ ...current, enabled }));
-  };
-
-  const handleTranscriptionEnableWordsChange = (enableWords: boolean): void => {
-    setTranscriptionSettings((current) => ({ ...current, enableWords }));
+    setOptions((current) => ({ ...current, [key]: value }));
+    if (selectedPreset !== 'custom') {
+      setSelectedPreset('custom');
+    }
   };
 
   const handleTranscriptionLanguageChange = (language: string): void => {
-    setTranscriptionSettings((current) => ({ ...current, language }));
+    setTranscriptionSettings((current) => ({
+      ...current,
+      language: language as TranscriptionSettings['language'],
+    }));
   };
 
   const handleAnalyze = async (): Promise<void> => {
@@ -257,17 +190,7 @@ function App(): JSX.Element {
       setPreviewSources({});
       setAnalysisState({
         status: 'error',
-        error: "L'analyse des medias n'est pas disponible.",
-        analyses: {},
-      });
-      return;
-    }
-    if (!options) {
-      cleanupPreviewUrls();
-      setPreviewSources({});
-      setAnalysisState({
-        status: 'error',
-        error: 'Options non disponibles.',
+        error: 'Media analysis is not available.',
         analyses: {},
       });
       return;
@@ -286,15 +209,9 @@ function App(): JSX.Element {
           inputPath: filePath,
           options,
           transcription: {
-            enabled: transcriptionSettings.enabled,
-            modelPath:
-              transcriptionSettings.modelPath.trim().length > 0
-                ? transcriptionSettings.modelPath.trim()
-                : undefined,
+            enabled: true,
             language: transcriptionSettings.language,
-            sampleRate: transcriptionSettings.sampleRate,
-            maxAlternatives: transcriptionSettings.maxAlternatives,
-            enableWords: transcriptionSettings.enableWords,
+            enableWords: true,
           },
         });
         analyses[filePath] = analysis;
@@ -313,93 +230,91 @@ function App(): JSX.Element {
 
       setAnalysisState({ status: 'done', analyses });
       setPreviewSources(newPreviewSources);
-      setInfoMessage('Analyse terminee.');
+      setInfoMessage('Analysis complete.');
     } catch (error) {
-      console.error('Analyse failed', error);
+      console.error('Analysis failed', error);
       cleanupPreviewUrls();
       setPreviewSources({});
       setAnalysisState({
         status: 'error',
-        error: error instanceof Error ? error.message : "Erreur inconnue lors de l'analyse.",
+        error: error instanceof Error ? error.message : 'Unknown error during analysis.',
         analyses: {},
       });
     }
   };
 
-  const handleUseRecording = useCallback((): void => {
-    const { savedFilePath } = recordingState;
-    if (!savedFilePath) return;
-    setSelectedFiles((prev) => {
-      if (prev.includes(savedFilePath)) return prev;
-      return [...prev, savedFilePath];
-    });
-    setAnalysisState(DEFAULT_ANALYSIS_STATE);
-    cleanupPreviewUrls();
-    setPreviewSources({});
-    setInfoMessage(`Fichier ajoute : ${savedFilePath}`);
-  }, [recordingState, cleanupPreviewUrls]);
+  // Auto-add recording to files when done
+  useEffect(() => {
+    if (recordingState.status === 'done' && recordingState.savedFilePath) {
+      setSelectedFiles((prev) => {
+        if (prev.includes(recordingState.savedFilePath!)) return prev;
+        return [...prev, recordingState.savedFilePath!];
+      });
+    }
+  }, [recordingState.status, recordingState.savedFilePath]);
 
   return (
     <div className="page">
       <header className="page__header">
         <h1>VoxScribe</h1>
-        <p className="page__subtitle">
-          Ping Electron : <strong>{pingResult}</strong>
-        </p>
       </header>
 
       <main className="page__content">
-        <FileSelector selectedFiles={selectedFiles} onSelectFiles={handleSelectFiles} />
+        <div className="panels-row">
+          <FileSelector
+            selectedFiles={selectedFiles}
+            onSelectFiles={handleSelectFiles}
+            onRemoveFile={handleRemoveFile}
+          />
 
-        <RecordingPanel
-          recordingState={recordingState}
-          onLoadSources={loadRecordingSources}
-          onStartRecording={startRecording}
-          onStopRecording={stopRecording}
-          onSelectSource={handleSelectSource}
-          onToggleMicrophone={handleToggleMicrophone}
-          onResetRecording={handleResetRecording}
-          onUseRecording={handleUseRecording}
-        />
+          <RecordingPanel
+            recordingState={recordingState}
+            onStartRecording={startRecording}
+            onStopRecording={stopRecording}
+            onToggleMicrophone={handleToggleMicrophone}
+            onResetRecording={handleResetRecording}
+          />
+        </div>
 
-        <ParametersPanel options={options} onOptionChange={handleOptionChange} />
+        <div className="panels-row">
+          <ParametersPanel
+            selectedPreset={selectedPreset}
+            options={options}
+            onPresetChange={handlePresetChange}
+            onOptionChange={handleOptionChange}
+          />
 
-        <TranscriptionPanel
-          settings={transcriptionSettings}
-          onToggle={handleTranscriptionToggle}
-          onLanguageChange={handleTranscriptionLanguageChange}
-          onEnableWordsChange={handleTranscriptionEnableWordsChange}
-        />
+          <TranscriptionPanel
+            settings={transcriptionSettings}
+            onLanguageChange={handleTranscriptionLanguageChange}
+          />
+        </div>
 
         <section className="card">
-          <header className="card__header">
-            <h2>Analyse</h2>
-            <p>Decoupez automatiquement les zones parlees.</p>
-          </header>
-          <div className="card__body">
+          <div className="card__body card__body--centered">
             <button
-              className="btn btn-secondary"
+              className="btn btn-primary btn-lg"
               onClick={handleAnalyze}
               type="button"
               disabled={!hasFiles || isAnalyzing}
             >
-              {isAnalyzing ? 'Analyse en cours...' : 'Analyser'}
+              {isAnalyzing ? 'Analyzing...' : 'Analyze'}
             </button>
 
             {analysisState.status === 'error' && analysisState.error && (
               <p className="message message--error">{analysisState.error}</p>
             )}
             {infoMessage && <p className="message message--info">{infoMessage}</p>}
-
-            <ResultsPanel
-              analysisState={analysisState}
-              previewSources={previewSources}
-              onOpenPath={handleOpenPath}
-              onCopyPath={handleCopyPath}
-              onDownloadChunks={handleDownloadChunks}
-            />
           </div>
         </section>
+
+        <ResultsPanel
+          analysisState={analysisState}
+          previewSources={previewSources}
+          onOpenPath={handleOpenPath}
+          onCopyPath={handleCopyPath}
+          onDownloadChunks={handleDownloadChunks}
+        />
       </main>
     </div>
   );

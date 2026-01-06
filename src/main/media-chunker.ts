@@ -80,6 +80,7 @@ export type MediaAnalysisOptions = {
 export type MediaTranscriptionOptions = {
   enabled?: boolean;
   modelPath?: string;
+  language?: string;
   sampleRate?: number;
   maxAlternatives?: number;
   enableWords?: boolean;
@@ -174,7 +175,7 @@ const DEFAULT_OPTIONS: Required<MediaAnalysisOptions> = {
   paddingBeforeMs: 200,
   paddingAfterMs: 300,
   minChunkDurationMs: 500,
-  maxChunkDurationMs: 10 * 60 * 1000
+  maxChunkDurationMs: 10 * 60 * 1000,
 };
 
 const DEFAULT_TRANSCRIPTION_OPTIONS: NormalizedTranscriptionOptions = {
@@ -185,7 +186,7 @@ const DEFAULT_TRANSCRIPTION_OPTIONS: NormalizedTranscriptionOptions = {
   language: 'auto', // auto-detect language
   sampleRate: 16000,
   maxAlternatives: 0,
-  enableWords: true
+  enableWords: true,
 };
 
 type SilenceInterval = {
@@ -216,12 +217,12 @@ export class MediaChunkService {
     this.ffmpegPath = this.resolveBinaryPath(
       process.env['FFMPEG_PATH'] || getPackagedBinaryPath('ffmpeg'),
       ffmpegInstaller.path,
-      'ffmpeg'
+      'ffmpeg',
     );
     this.ffprobePath = this.resolveBinaryPath(
       process.env['FFPROBE_PATH'] || getPackagedBinaryPath('ffprobe'),
       ffprobeInstaller.path,
-      'ffprobe'
+      'ffprobe',
     );
     this.whisperService = new WhisperService();
   }
@@ -242,23 +243,27 @@ export class MediaChunkService {
 
     const durationMs = await this.probeDuration(sourcePath);
     const silenceIntervals = await this.detectSilences(sourcePath, normalizedOptions);
-    const speechSegments = this.buildSpeechSegments(durationMs, silenceIntervals, normalizedOptions);
+    const speechSegments = this.buildSpeechSegments(
+      durationMs,
+      silenceIntervals,
+      normalizedOptions,
+    );
     const constrainedSegments = this.enforceDurationConstraints(
       speechSegments,
       normalizedOptions,
-      durationMs
+      durationMs,
     );
     const chunks = constrainedSegments.map((segment, index) => ({
       id: `chunk-${index + 1}`,
       startMs: Math.round(segment.startMs),
       endMs: Math.round(segment.endMs),
-      durationMs: Math.max(0, Math.round(segment.endMs - segment.startMs))
+      durationMs: Math.max(0, Math.round(segment.endMs - segment.startMs)),
     }));
 
     const warnings: string[] = [];
     if (chunks.length === 0) {
       warnings.push(
-        "Aucun segment parlé détecté. Ajustez peut-être le seuil de silence ou vérifiez l'enregistrement."
+        "Aucun segment parlé détecté. Ajustez peut-être le seuil de silence ou vérifiez l'enregistrement.",
       );
     }
 
@@ -271,14 +276,14 @@ export class MediaChunkService {
       stem,
       suffix,
       constrainedSegments,
-      warnings
+      warnings,
     );
     const chunkExportsBundle = await this.renderChunkExports(
       sourcePath,
       outputDir,
       stem,
       suffix,
-      constrainedSegments
+      constrainedSegments,
     );
 
     const hasExports = chunkExportsBundle.exports.length > 0;
@@ -286,17 +291,17 @@ export class MediaChunkService {
     if (normalizedTranscription.enabled) {
       if (!hasExports) {
         warnings.push(
-          'Transcription demandée mais aucun chunk exporté. Ajustez les paramètres avant de relancer.'
+          'Transcription demandée mais aucun chunk exporté. Ajustez les paramètres avant de relancer.',
         );
       } else {
         try {
           transcriptions = await this.transcribeChunkExports(
             chunkExportsBundle.exports,
-            normalizedTranscription
+            normalizedTranscription,
           );
         } catch (error) {
           warnings.push(
-            `Échec de la transcription ${normalizedTranscription.engine} : ${(error as Error).message}`
+            `Échec de la transcription ${normalizedTranscription.engine} : ${(error as Error).message}`,
           );
         }
       }
@@ -315,29 +320,25 @@ export class MediaChunkService {
       transcriptions,
       transcription: normalizedTranscription,
       outputDir,
-      warnings
+      warnings,
     };
   }
 
   private normalizeOptions(
-    options: MediaAnalysisOptions | undefined
+    options: MediaAnalysisOptions | undefined,
   ): Required<MediaAnalysisOptions> {
     return {
-      silenceThresholdDb:
-        options?.silenceThresholdDb ?? DEFAULT_OPTIONS.silenceThresholdDb,
-      minSilenceDurationMs:
-        options?.minSilenceDurationMs ?? DEFAULT_OPTIONS.minSilenceDurationMs,
+      silenceThresholdDb: options?.silenceThresholdDb ?? DEFAULT_OPTIONS.silenceThresholdDb,
+      minSilenceDurationMs: options?.minSilenceDurationMs ?? DEFAULT_OPTIONS.minSilenceDurationMs,
       paddingBeforeMs: options?.paddingBeforeMs ?? DEFAULT_OPTIONS.paddingBeforeMs,
       paddingAfterMs: options?.paddingAfterMs ?? DEFAULT_OPTIONS.paddingAfterMs,
-      minChunkDurationMs:
-        options?.minChunkDurationMs ?? DEFAULT_OPTIONS.minChunkDurationMs,
-      maxChunkDurationMs:
-        options?.maxChunkDurationMs ?? DEFAULT_OPTIONS.maxChunkDurationMs
+      minChunkDurationMs: options?.minChunkDurationMs ?? DEFAULT_OPTIONS.minChunkDurationMs,
+      maxChunkDurationMs: options?.maxChunkDurationMs ?? DEFAULT_OPTIONS.maxChunkDurationMs,
     };
   }
 
   private normalizeTranscriptionOptions(
-    options: MediaTranscriptionOptions | undefined
+    options: MediaTranscriptionOptions | undefined,
   ): NormalizedTranscriptionOptions {
     if (!options) {
       return { ...DEFAULT_TRANSCRIPTION_OPTIONS };
@@ -350,7 +351,7 @@ export class MediaChunkService {
       engine: 'whisper', // Default to Whisper
       modelPath: requestModel ? path.resolve(requestModel) : null,
       modelName: DEFAULT_TRANSCRIPTION_OPTIONS.modelName,
-      language: DEFAULT_TRANSCRIPTION_OPTIONS.language,
+      language: options.language ?? DEFAULT_TRANSCRIPTION_OPTIONS.language,
       sampleRate:
         options.sampleRate && options.sampleRate > 0
           ? options.sampleRate
@@ -359,7 +360,7 @@ export class MediaChunkService {
         options.maxAlternatives !== undefined && options.maxAlternatives >= 0
           ? options.maxAlternatives
           : DEFAULT_TRANSCRIPTION_OPTIONS.maxAlternatives,
-      enableWords: options.enableWords ?? DEFAULT_TRANSCRIPTION_OPTIONS.enableWords
+      enableWords: options.enableWords ?? DEFAULT_TRANSCRIPTION_OPTIONS.enableWords,
     };
   }
 
@@ -380,12 +381,12 @@ export class MediaChunkService {
   private resolveBinaryPath(
     preferredPath: string | undefined,
     fallbackPath: string,
-    label: 'ffmpeg' | 'ffprobe'
+    label: 'ffmpeg' | 'ffprobe',
   ): string {
     const candidate = preferredPath?.trim() || fallbackPath;
     if (!candidate) {
       throw new Error(
-        `Aucun binaire ${label} disponible. Installez ffmpeg ou ajoutez @${label}-installer comme dépendance.`
+        `Aucun binaire ${label} disponible. Installez ffmpeg ou ajoutez @${label}-installer comme dépendance.`,
       );
     }
     return candidate;
@@ -393,7 +394,15 @@ export class MediaChunkService {
 
   private async probeDuration(inputPath: string): Promise<number> {
     // Try to get duration from format metadata
-    const formatArgs = ['-v', 'error', '-show_entries', 'format=duration', '-of', 'json', inputPath];
+    const formatArgs = [
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration',
+      '-of',
+      'json',
+      inputPath,
+    ];
     const formatResult = await this.runCommand(this.ffprobePath, formatArgs);
 
     try {
@@ -412,13 +421,23 @@ export class MediaChunkService {
 
     // Fallback: try to get duration from stream metadata (works better for some webm files)
     try {
-      const streamArgs = ['-v', 'error', '-show_entries', 'stream=duration', '-of', 'json', inputPath];
+      const streamArgs = [
+        '-v',
+        'error',
+        '-show_entries',
+        'stream=duration',
+        '-of',
+        'json',
+        inputPath,
+      ];
       const streamResult = await this.runCommand(this.ffprobePath, streamArgs);
       const streamParsed = JSON.parse(streamResult.stdout) as {
         streams?: Array<{ duration?: string }>;
       };
 
-      const streamDuration = streamParsed?.streams?.[0]?.duration ? Number(streamParsed.streams[0].duration) : NaN;
+      const streamDuration = streamParsed?.streams?.[0]?.duration
+        ? Number(streamParsed.streams[0].duration)
+        : NaN;
       if (Number.isFinite(streamDuration) && streamDuration > 0) {
         return Math.round(streamDuration * 1000);
       }
@@ -429,11 +448,7 @@ export class MediaChunkService {
     // Last resort: decode the file with ffmpeg to get actual duration
     console.warn('Could not get duration from metadata, decoding file with ffmpeg...');
     try {
-      const decodeArgs = [
-        '-i', inputPath,
-        '-f', 'null',
-        '-'
-      ];
+      const decodeArgs = ['-i', inputPath, '-f', 'null', '-'];
       const decodeResult = await this.runCommand(this.ffmpegPath, decodeArgs);
 
       // Parse stderr for "time=HH:MM:SS.MS" pattern
@@ -457,7 +472,7 @@ export class MediaChunkService {
 
   private async detectSilences(
     inputPath: string,
-    options: Required<MediaAnalysisOptions>
+    options: Required<MediaAnalysisOptions>,
   ): Promise<SilenceInterval[]> {
     const args = [
       '-hide_banner',
@@ -468,7 +483,7 @@ export class MediaChunkService {
       `silencedetect=noise=${options.silenceThresholdDb}dB:d=${options.minSilenceDurationMs / 1000}`,
       '-f',
       'null',
-      '-'
+      '-',
     ];
 
     const result = await this.runCommand(this.ffmpegPath, args);
@@ -501,11 +516,10 @@ export class MediaChunkService {
       if (endMatch) {
         const end = Number(endMatch[1]) * 1000;
         const duration = Number(endMatch[2]) * 1000;
-        const start =
-          lastSilenceStart ?? Math.max(0, end - duration); // fallback if start not logged
+        const start = lastSilenceStart ?? Math.max(0, end - duration); // fallback if start not logged
         silenceIntervals.push({
           startMs: Math.max(0, start),
-          endMs: Math.max(start, end)
+          endMs: Math.max(start, end),
         });
         lastSilenceStart = null;
       }
@@ -515,7 +529,7 @@ export class MediaChunkService {
     if (lastSilenceStart !== null) {
       silenceIntervals.push({
         startMs: Math.max(0, lastSilenceStart),
-        endMs: lastSilenceStart
+        endMs: lastSilenceStart,
       });
     }
 
@@ -525,9 +539,14 @@ export class MediaChunkService {
   private buildSpeechSegments(
     durationMs: number,
     silences: SilenceInterval[],
-    options: Required<MediaAnalysisOptions>
+    options: Required<MediaAnalysisOptions>,
   ): SilenceInterval[] {
-    console.log('DEBUG: buildSpeechSegments - durationMs:', durationMs, 'silences count:', silences.length);
+    console.log(
+      'DEBUG: buildSpeechSegments - durationMs:',
+      durationMs,
+      'silences count:',
+      silences.length,
+    );
     const segments: SilenceInterval[] = [];
     const clampedDuration = Math.max(0, durationMs);
     let cursor = 0;
@@ -542,7 +561,9 @@ export class MediaChunkService {
     }
 
     if (cursor < clampedDuration) {
-      console.log(`DEBUG: No silences cover end of file, creating final segment from ${cursor}ms to ${clampedDuration}ms`);
+      console.log(
+        `DEBUG: No silences cover end of file, creating final segment from ${cursor}ms to ${clampedDuration}ms`,
+      );
       segments.push({ startMs: cursor, endMs: clampedDuration });
     }
 
@@ -554,7 +575,7 @@ export class MediaChunkService {
         const paddedEnd = Math.min(clampedDuration, segment.endMs + options.paddingAfterMs);
         return {
           startMs: Math.min(paddedStart, paddedEnd),
-          endMs: Math.max(paddedStart, paddedEnd)
+          endMs: Math.max(paddedStart, paddedEnd),
         };
       })
       .filter((segment) => segment.endMs > segment.startMs);
@@ -584,7 +605,7 @@ export class MediaChunkService {
   private enforceDurationConstraints(
     segments: SilenceInterval[],
     options: Required<MediaAnalysisOptions>,
-    durationMs: number
+    durationMs: number,
   ): SilenceInterval[] {
     if (segments.length === 0) {
       return segments;
@@ -631,7 +652,7 @@ export class MediaChunkService {
 
       normalized.push({
         startMs: Math.max(0, Math.min(adjustedStart, durationMs)),
-        endMs: Math.max(0, Math.min(adjustedEnd, durationMs))
+        endMs: Math.max(0, Math.min(adjustedEnd, durationMs)),
       });
     }
 
@@ -658,7 +679,7 @@ export class MediaChunkService {
 
     return bounded.map((segment) => ({
       startMs: Math.max(0, segment.startMs),
-      endMs: Math.min(durationMs, segment.endMs)
+      endMs: Math.min(durationMs, segment.endMs),
     }));
   }
 
@@ -683,7 +704,7 @@ export class MediaChunkService {
     stem: string,
     suffix: string,
     segments: SilenceInterval[],
-    warnings: string[]
+    warnings: string[],
   ): Promise<{
     original: MediaPreview | null;
     trimmed: MediaPreview | null;
@@ -699,20 +720,20 @@ export class MediaChunkService {
         trimmedPreview = await this.renderTrimmedPreview(sourcePath, trimmedPath, segments);
       } catch (error) {
         warnings.push(
-          `Impossible de générer la version sans silences : ${(error as Error).message}`
+          `Impossible de générer la version sans silences : ${(error as Error).message}`,
         );
       }
     }
 
     return {
       original: originalPreview,
-      trimmed: trimmedPreview
+      trimmed: trimmedPreview,
     };
   }
 
   private async renderOriginalPreview(
     sourcePath: string,
-    targetPath: string
+    targetPath: string,
   ): Promise<MediaPreview> {
     await this.runCommand(this.ffmpegPath, [
       '-y',
@@ -725,7 +746,7 @@ export class MediaChunkService {
       'libmp3lame',
       '-q:a',
       '3',
-      targetPath
+      targetPath,
     ]);
 
     const base64 = await this.readBase64(targetPath);
@@ -735,14 +756,14 @@ export class MediaChunkService {
       format: 'mp3',
       path: targetPath,
       fileUrl: pathToFileURL(targetPath).toString(),
-      base64
+      base64,
     };
   }
 
   private async renderTrimmedPreview(
     sourcePath: string,
     targetPath: string,
-    segments: SilenceInterval[]
+    segments: SilenceInterval[],
   ): Promise<MediaPreview> {
     const filterComplex = this.buildTrimFilterComplex(segments);
 
@@ -759,7 +780,7 @@ export class MediaChunkService {
       'libmp3lame',
       '-q:a',
       '3',
-      targetPath
+      targetPath,
     ]);
 
     const base64 = await this.readBase64(targetPath);
@@ -769,13 +790,13 @@ export class MediaChunkService {
       format: 'mp3',
       path: targetPath,
       fileUrl: pathToFileURL(targetPath).toString(),
-      base64
+      base64,
     };
   }
 
   private async transcribeChunkExports(
     chunkExports: MediaChunkExport[],
-    options: NormalizedTranscriptionOptions
+    options: NormalizedTranscriptionOptions,
   ): Promise<MediaChunkTranscription[]> {
     if (options.engine === 'whisper') {
       return this.transcribeWithWhisper(chunkExports, options);
@@ -786,7 +807,7 @@ export class MediaChunkService {
 
   private async transcribeWithWhisper(
     chunkExports: MediaChunkExport[],
-    options: NormalizedTranscriptionOptions
+    options: NormalizedTranscriptionOptions,
   ): Promise<MediaChunkTranscription[]> {
     console.log('Starting Whisper transcription for', chunkExports.length, 'chunks');
 
@@ -797,8 +818,18 @@ export class MediaChunkService {
         const segments = await this.whisperService.transcribe(chunk.wavPath, {
           modelName: options.modelName || 'medium',
           modelPath: options.modelPath || undefined,
-          language: options.language || 'auto',
-          wordTimestamps: options.enableWords
+          language: (options.language || 'auto') as
+            | 'auto'
+            | 'en'
+            | 'fr'
+            | 'es'
+            | 'de'
+            | 'it'
+            | 'pt'
+            | 'nl'
+            | 'ja'
+            | 'zh',
+          wordTimestamps: options.enableWords,
         });
 
         // Convert Whisper segments to our format
@@ -822,7 +853,7 @@ export class MediaChunkService {
                 word,
                 startSec: startSec + index * timePerWord,
                 endSec: startSec + (index + 1) * timePerWord,
-                confidence: null // Whisper doesn't provide word-level confidence
+                confidence: null, // Whisper doesn't provide word-level confidence
               });
             });
           }
@@ -833,7 +864,7 @@ export class MediaChunkService {
           text: fullText,
           confidence: null, // Whisper doesn't provide overall confidence
           words,
-          rawResult: { segments } // Store raw Whisper output
+          rawResult: { segments }, // Store raw Whisper output
         });
       } catch (error) {
         console.error(`Whisper transcription failed for chunk ${chunk.id}:`, error);
@@ -843,7 +874,7 @@ export class MediaChunkService {
           confidence: null,
           words: [],
           rawResult: null,
-          error: error instanceof Error ? error.message : 'Unknown error'
+          error: error instanceof Error ? error.message : 'Unknown error',
         });
       }
     }
@@ -853,7 +884,7 @@ export class MediaChunkService {
 
   private async transcribeWithVosk(
     chunkExports: MediaChunkExport[],
-    options: NormalizedTranscriptionOptions
+    options: NormalizedTranscriptionOptions,
   ): Promise<MediaChunkTranscription[]> {
     if (!options.modelPath) {
       throw new Error('Chemin du modèle Vosk non défini.');
@@ -870,7 +901,7 @@ export class MediaChunkService {
       vosk = nodeRequire('vosk') as VoskModule;
     } catch {
       throw new Error(
-        'Le module "vosk" est introuvable. Installez-le via "pnpm add vosk" puis relancez la transcription.'
+        'Le module "vosk" est introuvable. Installez-le via "pnpm add vosk" puis relancez la transcription.',
       );
     }
 
@@ -892,7 +923,7 @@ export class MediaChunkService {
     vosk: VoskModule,
     model: InstanceType<VoskModule['Model']>,
     chunk: MediaChunkExport,
-    options: NormalizedTranscriptionOptions
+    options: NormalizedTranscriptionOptions,
   ): Promise<MediaChunkTranscription> {
     try {
       const buffer = await fs.readFile(chunk.wavPath);
@@ -914,13 +945,16 @@ export class MediaChunkService {
         model,
         sampleRate: parsed.sampleRate,
         maxAlternatives: options.maxAlternatives,
-        words: options.enableWords
+        words: options.enableWords,
       });
 
       try {
         const frameSize = 4096;
         for (let offset = 0; offset < parsed.data.length; offset += frameSize) {
-          const slice = parsed.data.subarray(offset, Math.min(offset + frameSize, parsed.data.length));
+          const slice = parsed.data.subarray(
+            offset,
+            Math.min(offset + frameSize, parsed.data.length),
+          );
           recognizer.acceptWaveform(slice);
         }
 
@@ -932,7 +966,7 @@ export class MediaChunkService {
           text: parsedResult.text,
           confidence: parsedResult.confidence,
           words: parsedResult.words,
-          rawResult: parsedResult.raw ?? null
+          rawResult: parsedResult.raw ?? null,
         };
       } finally {
         recognizer.free();
@@ -944,7 +978,7 @@ export class MediaChunkService {
         confidence: null,
         words: [],
         rawResult: null,
-        error: (error as Error).message
+        error: (error as Error).message,
       };
     }
   }
@@ -954,13 +988,13 @@ export class MediaChunkService {
     outputDir: string,
     stem: string,
     suffix: string,
-    segments: SilenceInterval[]
+    segments: SilenceInterval[],
   ): Promise<MediaChunkExportBundle> {
     if (segments.length === 0) {
       return {
         exports: [],
         directoryPath: '',
-        directoryUrl: ''
+        directoryUrl: '',
       };
     }
 
@@ -995,7 +1029,7 @@ export class MediaChunkService {
         '16000',
         '-ac',
         '1',
-        chunkPath
+        chunkPath,
       ]);
 
       exports.push({
@@ -1004,20 +1038,18 @@ export class MediaChunkService {
         endMs: segment.endMs,
         durationMs: Math.max(0, Math.round(segment.endMs - segment.startMs)),
         wavPath: chunkPath,
-        wavUrl: pathToFileURL(chunkPath).toString()
+        wavUrl: pathToFileURL(chunkPath).toString(),
       });
     }
 
     return {
       exports,
       directoryPath: chunkDir,
-      directoryUrl: pathToFileURL(chunkDir).toString()
+      directoryUrl: pathToFileURL(chunkDir).toString(),
     };
   }
 
-  private parseVoskResult(
-    rawResult: string
-  ): {
+  private parseVoskResult(rawResult: string): {
     text: string;
     words: MediaChunkTranscriptionWord[];
     raw: Record<string, unknown> | null;
@@ -1028,7 +1060,7 @@ export class MediaChunkService {
         text: '',
         words: [],
         raw: null,
-        confidence: null
+        confidence: null,
       };
     }
 
@@ -1052,8 +1084,8 @@ export class MediaChunkService {
           words.push({
             word: wordValue,
             startSec: start ?? 0,
-            endSec: end ?? (start ?? 0),
-            confidence: confidence
+            endSec: end ?? start ?? 0,
+            confidence: confidence,
           });
         }
       }
@@ -1062,14 +1094,14 @@ export class MediaChunkService {
         text,
         words,
         raw: parsed,
-        confidence: this.computeAverageConfidence(words)
+        confidence: this.computeAverageConfidence(words),
       };
     } catch {
       return {
         text: rawResult.trim(),
         words: [],
         raw: null,
-        confidence: null
+        confidence: null,
       };
     }
   }
@@ -1151,7 +1183,7 @@ export class MediaChunkService {
       channels,
       sampleRate,
       bitsPerSample,
-      data
+      data,
     };
   }
 
@@ -1193,7 +1225,7 @@ export class MediaChunkService {
   private async runCommand(commandPath: string, args: string[]): Promise<CommandResult> {
     return await new Promise<CommandResult>((resolve, reject) => {
       const child = spawn(commandPath, args, {
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
 
       let stdout = '';
@@ -1210,8 +1242,8 @@ export class MediaChunkService {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
           reject(
             new Error(
-              `Le binaire "${commandPath}" est introuvable. Installez ffmpeg/ffprobe ou définissez les variables d'environnement FFMPEG_PATH et FFPROBE_PATH.`
-            )
+              `Le binaire "${commandPath}" est introuvable. Installez ffmpeg/ffprobe ou définissez les variables d'environnement FFMPEG_PATH et FFPROBE_PATH.`,
+            ),
           );
           return;
         }
@@ -1225,8 +1257,8 @@ export class MediaChunkService {
           reject(
             new Error(
               `La commande "${commandPath} ${args.join(' ')}" s'est terminée avec le code ${code}.` +
-                (stderr ? `\n--- stderr ---\n${stderr}` : '')
-            )
+                (stderr ? `\n--- stderr ---\n${stderr}` : ''),
+            ),
           );
         }
       });

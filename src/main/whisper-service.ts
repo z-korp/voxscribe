@@ -1,11 +1,54 @@
-import {
-  downloadWhisperModel,
-  installWhisperCpp,
-  transcribe
-} from '@remotion/install-whisper-cpp';
+import { downloadWhisperModel, installWhisperCpp, transcribe } from '@remotion/install-whisper-cpp';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
+
+// Whisper model names supported by @remotion/install-whisper-cpp
+export type WhisperModelName =
+  | 'tiny'
+  | 'tiny.en'
+  | 'base'
+  | 'base.en'
+  | 'small'
+  | 'small.en'
+  | 'medium'
+  | 'medium.en'
+  | 'large-v1'
+  | 'large-v2'
+  | 'large-v3';
+
+// Language codes supported by Whisper
+export type WhisperLanguage =
+  | 'auto'
+  | 'en'
+  | 'fr'
+  | 'es'
+  | 'de'
+  | 'it'
+  | 'pt'
+  | 'nl'
+  | 'ja'
+  | 'zh'
+  | 'ko'
+  | 'ru'
+  | 'ar'
+  | 'pl'
+  | 'sv'
+  | 'da'
+  | 'fi'
+  | 'no'
+  | 'tr'
+  | 'uk'
+  | 'vi'
+  | 'th'
+  | 'id'
+  | 'ms'
+  | 'hi'
+  | 'cs'
+  | 'el'
+  | 'he'
+  | 'hu'
+  | 'ro';
 
 export type WhisperTranscriptSegment = {
   start: string;
@@ -16,9 +59,21 @@ export type WhisperTranscriptSegment = {
 export type WhisperOptions = {
   modelName?: string; // 'tiny', 'base', 'small', 'medium', 'large'
   modelPath?: string; // custom model path
-  language?: string; // 'auto', 'en', 'fr', etc.
+  language?: WhisperLanguage; // 'auto', 'en', 'fr', etc.
   wordTimestamps?: boolean;
 };
+
+// Whisper metadata patterns to filter out (system messages, not actual speech)
+const WHISPER_METADATA_PATTERNS = [
+  /\[BLANK_AUDIO\]/gi,
+  /\[SOUND\]/gi,
+  /\[MUSIC\]/gi,
+  /\[NOISE\]/gi,
+  /\[SILENCE\]/gi,
+  /\[INAUDIBLE\]/gi,
+  /\[_[A-Z]+\]/gi, // [_TT_xxx] internal tokens
+  /\[\s*(?:French|English|Spanish|German|Italian|Portuguese|Dutch|Japanese|Chinese|Korean|Russian|Arabic)\s+(?:translation|speech|audio)\s*\]/gi,
+];
 
 export class WhisperService {
   private whisperPath: string;
@@ -47,7 +102,7 @@ export class WhisperService {
       console.log('Installing whisper.cpp binaries...');
       await installWhisperCpp({
         to: this.whisperPath,
-        version: this.whisperVersion
+        version: this.whisperVersion,
       });
       console.log('whisper.cpp installed successfully');
     }
@@ -64,9 +119,8 @@ export class WhisperService {
     if (!fs.existsSync(modelPath)) {
       console.log(`Downloading Whisper model: ${modelName}...`);
       await downloadWhisperModel({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        model: modelName as any, // Type assertion for model name
-        folder: this.whisperPath
+        model: modelName as WhisperModelName,
+        folder: this.whisperPath,
       });
       console.log(`Model ${modelName} downloaded successfully`);
     }
@@ -77,7 +131,7 @@ export class WhisperService {
    */
   async transcribe(
     audioFilePath: string,
-    options: WhisperOptions = {}
+    options: WhisperOptions = {},
   ): Promise<WhisperTranscriptSegment[]> {
     const { modelName = 'medium', language = 'auto' } = options;
 
@@ -101,17 +155,20 @@ export class WhisperService {
       console.log('Starting Whisper transcription:', {
         file: audioFilePath,
         model: fullModelName,
-        language
+        language,
       });
 
       // Transcribe using @remotion/install-whisper-cpp
+      // IMPORTANT: translateToEnglish must be false to get transcription in original language
       const result = await transcribe({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        model: fullModelName as any, // Type assertion
-        whisperPath: this.whisperPath,
         inputPath: audioFilePath,
+        whisperPath: this.whisperPath,
+        whisperCppVersion: this.whisperVersion,
+        model: fullModelName as WhisperModelName,
         tokenLevelTimestamps: true,
-        whisperCppVersion: this.whisperVersion
+        translateToEnglish: false, // DO NOT translate - transcribe in original language
+        language: language === 'auto' ? undefined : (language as WhisperLanguage),
+        printOutput: false, // Disable verbose output in production
       });
 
       console.log('Whisper transcription complete');
@@ -129,20 +186,29 @@ export class WhisperService {
         'Whisper result keys:',
         Object.keys(result),
         'transcription is array:',
-        Array.isArray(result.transcription)
+        Array.isArray(result.transcription),
       );
 
       if (result.transcription && Array.isArray(result.transcription)) {
         for (const item of result.transcription) {
           // item format: {timestamps: {from: "00:00:00", to: "00:00:05"}, text: string, ...}
-          const text = typeof item.text === 'string' ? item.text.trim() : '';
+          let text = typeof item.text === 'string' ? item.text.trim() : '';
           const startTime = item.timestamps?.from || '00:00:00.000';
           const endTime = item.timestamps?.to || '00:00:00.000';
+
+          // Filter out Whisper metadata messages (system tokens, not actual speech)
+          // Uses specific patterns to avoid removing legitimate content like [applause]
+          text = this.filterWhisperMetadata(text);
+
+          // Skip empty segments after filtering
+          if (!text) {
+            continue;
+          }
 
           segments.push({
             start: startTime,
             end: endTime,
-            speech: text
+            speech: text,
           });
         }
       }
@@ -167,8 +233,8 @@ export class WhisperService {
           {
             start: firstStart,
             end: lastEnd,
-            speech: fullText.trim()
-          }
+            speech: fullText.trim(),
+          },
         ];
       }
 
@@ -176,9 +242,22 @@ export class WhisperService {
     } catch (error) {
       console.error('Whisper transcription failed:', error);
       throw new Error(
-        `Transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        `Transcription failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       );
     }
+  }
+
+  /**
+   * Filter out Whisper metadata messages that are not actual speech
+   * Uses specific patterns to preserve legitimate content like [applause], [laughing]
+   */
+  private filterWhisperMetadata(text: string): string {
+    let filtered = text;
+    for (const pattern of WHISPER_METADATA_PATTERNS) {
+      filtered = filtered.replace(pattern, '');
+    }
+    // Clean up extra whitespace
+    return filtered.replace(/\s+/g, ' ').trim();
   }
 
   /**

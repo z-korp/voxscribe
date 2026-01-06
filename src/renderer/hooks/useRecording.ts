@@ -1,70 +1,73 @@
 import { useCallback, useRef, useState } from 'react';
 import { RecordingState, DEFAULT_RECORDING_STATE } from '../types';
 
+type RecordingRefs = {
+  mediaRecorder: MediaRecorder | null;
+  recordedChunks: Blob[];
+  recordingStartTime: number;
+  recordingTimer: number | null;
+  activeStreams: MediaStream[];
+};
+
 export function useRecording(setInfoMessage: (msg: string | null) => void) {
   const [recordingState, setRecordingState] = useState<RecordingState>(DEFAULT_RECORDING_STATE);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordedChunksRef = useRef<Blob[]>([]);
-  const recordingStartTimeRef = useRef<number>(0);
-  const recordingTimerRef = useRef<number | null>(null);
-  const activeStreamsRef = useRef<MediaStream[]>([]);
+
+  // Use a single ref object to avoid stale closure issues
+  const refs = useRef<RecordingRefs>({
+    mediaRecorder: null,
+    recordedChunks: [],
+    recordingStartTime: 0,
+    recordingTimer: null,
+    activeStreams: [],
+  });
 
   const stopRecordingStreams = useCallback((): void => {
-    activeStreamsRef.current.forEach((stream) => {
+    refs.current.activeStreams.forEach((stream) => {
       stream.getTracks().forEach((track) => track.stop());
     });
-    activeStreamsRef.current = [];
+    refs.current.activeStreams = [];
 
-    if (recordingTimerRef.current !== null) {
-      window.clearInterval(recordingTimerRef.current);
-      recordingTimerRef.current = null;
+    if (refs.current.recordingTimer !== null) {
+      window.clearInterval(refs.current.recordingTimer);
+      refs.current.recordingTimer = null;
     }
   }, []);
 
-  const loadRecordingSources = useCallback(async (): Promise<void> => {
+  const startRecording = useCallback(async (): Promise<void> => {
     const api = window.electronAPI;
     if (!api?.getRecordingSources) {
       setRecordingState((prev) => ({
         ...prev,
         status: 'error',
-        error: "L'API d'enregistrement n'est pas disponible.",
+        error: 'Recording API is not available.',
       }));
       return;
     }
 
     try {
-      setRecordingState((prev) => ({ ...prev, status: 'selecting' }));
+      // Get sources and auto-select the first one (usually "Entire Screen")
       const sources = await api.getRecordingSources();
-      setRecordingState((prev) => ({
-        ...prev,
-        sources,
-        selectedSourceId: sources.length > 0 ? sources[0].id : null,
-      }));
-    } catch (error) {
-      console.error('Failed to load sources', error);
-      setRecordingState((prev) => ({
-        ...prev,
-        status: 'error',
-        error: 'Impossible de charger les sources.',
-      }));
-    }
-  }, []);
+      if (sources.length === 0) {
+        setRecordingState((prev) => ({
+          ...prev,
+          status: 'error',
+          error: 'No audio sources available.',
+        }));
+        return;
+      }
 
-  const startRecording = useCallback(async (): Promise<void> => {
-    const { selectedSourceId, includeMicrophone } = recordingState;
+      const selectedSourceId = sources[0].id;
 
-    if (!selectedSourceId) {
-      setRecordingState((prev) => ({
-        ...prev,
-        status: 'error',
-        error: 'Veuillez selectionner une source.',
-      }));
-      return;
-    }
+      // Read includeMicrophone from current state via callback
+      // This avoids stale closure issues
+      let includeMicrophone = false;
+      setRecordingState((prev) => {
+        includeMicrophone = prev.includeMicrophone;
+        return prev;
+      });
 
-    try {
       stopRecordingStreams();
-      recordedChunksRef.current = [];
+      refs.current.recordedChunks = [];
 
       const systemStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -83,7 +86,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         },
       });
 
-      activeStreamsRef.current.push(systemStream);
+      refs.current.activeStreams.push(systemStream);
       systemStream.getVideoTracks().forEach((track) => track.stop());
 
       let finalStream: MediaStream;
@@ -95,7 +98,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
             noiseSuppression: true,
           },
         });
-        activeStreamsRef.current.push(micStream);
+        refs.current.activeStreams.push(micStream);
 
         const audioContext = new AudioContext();
         const destination = audioContext.createMediaStreamDestination();
@@ -117,25 +120,25 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
 
       mediaRecorder.ondataavailable = (event): void => {
         if (event.data.size > 0) {
-          recordedChunksRef.current.push(event.data);
+          refs.current.recordedChunks.push(event.data);
         }
       };
 
       mediaRecorder.onstop = async (): Promise<void> => {
         stopRecordingStreams();
 
-        const blob = new Blob(recordedChunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(refs.current.recordedChunks, { type: 'audio/webm' });
         const arrayBuffer = await blob.arrayBuffer();
 
         setRecordingState((prev) => ({ ...prev, status: 'saving' }));
 
         try {
-          const api = window.electronAPI;
-          if (!api?.saveRecording) {
-            throw new Error("L'API de sauvegarde n'est pas disponible.");
+          const saveApi = window.electronAPI;
+          if (!saveApi?.saveRecording) {
+            throw new Error('Save API is not available.');
           }
 
-          const result = await api.saveRecording({ buffer: arrayBuffer });
+          const result = await saveApi.saveRecording({ buffer: arrayBuffer });
 
           setRecordingState((prev) => ({
             ...prev,
@@ -143,21 +146,21 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
             savedFilePath: result.filePath,
           }));
 
-          setInfoMessage(`Enregistrement sauvegarde : ${result.filePath}`);
+          setInfoMessage(`Recording saved: ${result.filePath}`);
         } catch (error) {
           console.error('Save failed', error);
           setRecordingState((prev) => ({
             ...prev,
             status: 'error',
-            error: "Impossible de sauvegarder l'enregistrement.",
+            error: 'Failed to save recording.',
           }));
         }
       };
 
-      mediaRecorderRef.current = mediaRecorder;
+      refs.current.mediaRecorder = mediaRecorder;
       mediaRecorder.start(1000);
 
-      recordingStartTimeRef.current = Date.now();
+      refs.current.recordingStartTime = Date.now();
       setRecordingState((prev) => ({
         ...prev,
         status: 'recording',
@@ -165,8 +168,8 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         error: undefined,
       }));
 
-      recordingTimerRef.current = window.setInterval(() => {
-        const elapsed = Date.now() - recordingStartTimeRef.current;
+      refs.current.recordingTimer = window.setInterval(() => {
+        const elapsed = Date.now() - refs.current.recordingStartTime;
         setRecordingState((prev) => ({ ...prev, durationMs: elapsed }));
       }, 100);
     } catch (error) {
@@ -175,25 +178,21 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
       setRecordingState((prev) => ({
         ...prev,
         status: 'error',
-        error: error instanceof Error ? error.message : "Impossible de demarrer l'enregistrement.",
+        error: error instanceof Error ? error.message : 'Failed to start recording.',
       }));
     }
-  }, [recordingState, stopRecordingStreams, setInfoMessage]);
+  }, [stopRecordingStreams, setInfoMessage]);
 
   const stopRecording = useCallback((): void => {
-    const recorder = mediaRecorderRef.current;
+    const recorder = refs.current.mediaRecorder;
     if (recorder && recorder.state !== 'inactive') {
       recorder.stop();
     }
-    mediaRecorderRef.current = null;
+    refs.current.mediaRecorder = null;
   }, []);
 
   const handleToggleMicrophone = useCallback((enabled: boolean): void => {
     setRecordingState((prev) => ({ ...prev, includeMicrophone: enabled }));
-  }, []);
-
-  const handleSelectSource = useCallback((sourceId: string): void => {
-    setRecordingState((prev) => ({ ...prev, selectedSourceId: sourceId }));
   }, []);
 
   const handleResetRecording = useCallback((): void => {
@@ -204,12 +203,10 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
   return {
     recordingState,
     setRecordingState,
-    loadRecordingSources,
     startRecording,
     stopRecording,
     stopRecordingStreams,
     handleToggleMicrophone,
-    handleSelectSource,
     handleResetRecording,
   };
 }
