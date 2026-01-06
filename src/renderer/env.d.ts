@@ -40,9 +40,7 @@ export interface ElectronAPI {
     };
     transcription?: {
       enabled?: boolean;
-      modelPath?: string;
-      sampleRate?: number;
-      maxAlternatives?: number;
+      language?: string;
       enableWords?: boolean;
     };
   }) => Promise<{
@@ -124,10 +122,7 @@ export interface ElectronAPI {
       thumbnail: string;
     }>
   >;
-  saveRecording: (options: {
-    buffer: ArrayBuffer;
-    filename?: string;
-  }) => Promise<{
+  saveRecording: (options: { buffer: ArrayBuffer; filename?: string }) => Promise<{
     filePath: string;
     fileUrl: string;
   }>;

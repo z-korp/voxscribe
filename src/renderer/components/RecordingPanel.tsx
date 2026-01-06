@@ -25,13 +25,13 @@ export function RecordingPanel({
   return (
     <section className="card">
       <header className="card__header">
-        <h2>Enregistrement Meeting</h2>
-        <p>Capturez l&apos;audio systeme et votre micro.</p>
+        <h2>Record Meeting</h2>
+        <p>Capture system audio and microphone.</p>
       </header>
       <div className="card__body">
         {recordingState.status === 'idle' && (
           <button className="btn btn-primary" onClick={onLoadSources} type="button">
-            Demarrer un enregistrement
+            Start recording
           </button>
         )}
 
@@ -42,7 +42,7 @@ export function RecordingPanel({
           <>
             {recordingState.status !== 'recording' && recordingState.status !== 'saving' && (
               <div className="recording-sources">
-                <p className="option__label">Source audio (ecran ou fenetre) :</p>
+                <p className="option__label">Audio source (screen or window):</p>
                 <div className="source-grid">
                   {recordingState.sources.map((source) => (
                     <button
@@ -69,9 +69,9 @@ export function RecordingPanel({
                     checked={recordingState.includeMicrophone}
                     onChange={(e) => onToggleMicrophone(e.target.checked)}
                   />
-                  <span className="option__label">Inclure le microphone</span>
+                  <span className="option__label">Include microphone</span>
                   <span className="option__description">
-                    Capture votre voix en plus de l&apos;audio systeme
+                    Capture your voice along with system audio.
                   </span>
                 </label>
               </div>
@@ -85,7 +85,7 @@ export function RecordingPanel({
                   type="button"
                   disabled={!recordingState.selectedSourceId}
                 >
-                  Lancer l&apos;enregistrement
+                  Start recording
                 </button>
               )}
 
@@ -98,26 +98,26 @@ export function RecordingPanel({
                     </span>
                   </div>
                   <button className="btn btn-secondary" onClick={onStopRecording} type="button">
-                    Arreter l&apos;enregistrement
+                    Stop recording
                   </button>
                 </>
               )}
 
               {recordingState.status === 'saving' && (
-                <p className="message message--info">Sauvegarde en cours...</p>
+                <p className="message message--info">Saving...</p>
               )}
 
               {recordingState.status === 'done' && recordingState.savedFilePath && (
                 <div className="recording-done">
                   <p className="message message--info">
-                    Enregistre : {normalizePath(recordingState.savedFilePath)}
+                    Saved: {normalizePath(recordingState.savedFilePath)}
                   </p>
                   <div className="recording-done__actions">
                     <button className="btn btn-primary" onClick={onUseRecording} type="button">
-                      Utiliser pour l&apos;analyse
+                      Use for analysis
                     </button>
                     <button className="btn btn-tertiary" onClick={onResetRecording} type="button">
-                      Nouvel enregistrement
+                      New recording
                     </button>
                   </div>
                 </div>
@@ -132,7 +132,7 @@ export function RecordingPanel({
                     type="button"
                     style={{ marginLeft: '0.5rem' }}
                   >
-                    Annuler
+                    Cancel
                   </button>
                 )}
             </div>
@@ -148,7 +148,7 @@ export function RecordingPanel({
               type="button"
               style={{ marginTop: '0.5rem' }}
             >
-              Reessayer
+              Try again
             </button>
           </div>
         )}

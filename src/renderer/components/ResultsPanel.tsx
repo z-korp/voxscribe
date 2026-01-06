@@ -30,8 +30,7 @@ export function ResultsPanel({
             <header className="result__header">
               <h3>{normalizePath(analysis.sourcePath)}</h3>
               <p>
-                Duree estimee :{' '}
-                {analysis.durationMs ? formatMilliseconds(analysis.durationMs) : 'n/a'}
+                Duration: {analysis.durationMs ? formatMilliseconds(analysis.durationMs) : 'n/a'}
               </p>
             </header>
 
@@ -50,9 +49,9 @@ export function ResultsPanel({
                 <thead>
                   <tr>
                     <th>#</th>
-                    <th>Debut</th>
-                    <th>Fin</th>
-                    <th>Duree</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Duration</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -67,12 +66,12 @@ export function ResultsPanel({
                 </tbody>
               </table>
             ) : (
-              <p className="placeholder">Aucun segment detecte pour le moment.</p>
+              <p className="placeholder">No segments detected.</p>
             )}
 
             <div className="previews">
               <div className="preview">
-                <span className="preview__title">Avant nettoyage</span>
+                <span className="preview__title">Before cleanup</span>
                 {analysis.previews.original && sources.original ? (
                   <>
                     <audio controls className="preview__audio" src={sources.original} />
@@ -81,11 +80,11 @@ export function ResultsPanel({
                     </span>
                   </>
                 ) : (
-                  <p className="placeholder">Lecture originale indisponible.</p>
+                  <p className="placeholder">Original preview not available.</p>
                 )}
               </div>
               <div className="preview">
-                <span className="preview__title">Apres suppression du silence</span>
+                <span className="preview__title">After silence removal</span>
                 {analysis.previews.trimmed && sources.trimmed ? (
                   <>
                     <audio controls className="preview__audio" src={sources.trimmed} />
@@ -94,21 +93,21 @@ export function ResultsPanel({
                     </span>
                   </>
                 ) : (
-                  <p className="placeholder">Pas de version nettoyee disponible.</p>
+                  <p className="placeholder">Cleaned preview not available.</p>
                 )}
               </div>
             </div>
 
             <div className="result__exports">
               <div className="result__exports-header">
-                <h4>Chunks WAV prets pour STT</h4>
+                <h4>WAV Chunks (STT-ready)</h4>
                 <div className="result__exports-actions">
                   <button
                     className="btn btn-tertiary"
                     type="button"
                     onClick={() => onOpenPath(analysis.outputDir)}
                   >
-                    Ouvrir le dossier d&apos;export
+                    Open export folder
                   </button>
                   <button
                     className="btn btn-tertiary"
@@ -116,12 +115,12 @@ export function ResultsPanel({
                     disabled={analysis.chunkExports.length === 0}
                     onClick={() => onDownloadChunks(analysis.chunkExportsDirPath)}
                   >
-                    Telecharger tous les chunks
+                    Download all chunks
                   </button>
                 </div>
               </div>
               <p className="exports__hint">
-                Les fichiers WAV sont mono 16 kHz, prets pour Whisper et autres STT.
+                WAV files are mono 16kHz, ready for Whisper and other STT engines.
               </p>
               {analysis.chunkExports.length > 0 ? (
                 <ul className="exports">
@@ -130,7 +129,7 @@ export function ResultsPanel({
                       <div className="exports__meta">
                         <strong>Chunk {index + 1}</strong>
                         <span>
-                          {formatMilliseconds(chunkExport.startMs)} -&gt;{' '}
+                          {formatMilliseconds(chunkExport.startMs)} &rarr;{' '}
                           {formatMilliseconds(chunkExport.endMs)} |{' '}
                           {formatMilliseconds(chunkExport.durationMs)}
                         </span>
@@ -142,29 +141,27 @@ export function ResultsPanel({
                           type="button"
                           onClick={() => onCopyPath(chunkExport.wavPath)}
                         >
-                          Copier le chemin
+                          Copy path
                         </button>
                         <button
                           className="btn btn-tertiary"
                           type="button"
                           onClick={() => onOpenPath(chunkExport.wavPath)}
                         >
-                          Ouvrir
+                          Open
                         </button>
                       </div>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="placeholder">
-                  Aucun chunk exporte (ajustez les parametres et relancez).
-                </p>
+                <p className="placeholder">No chunks exported (adjust settings and retry).</p>
               )}
             </div>
 
             <div className="result__exports">
               <div className="result__exports-header">
-                <h4>Transcription Whisper</h4>
+                <h4>Transcription</h4>
               </div>
               {analysis.transcription.enabled ? (
                 <>
@@ -176,7 +173,7 @@ export function ResultsPanel({
                             <strong>Segment {index + 1}</strong>
                             {analysis.chunkExports[index] && (
                               <span className="transcription-entry__time">
-                                {formatMilliseconds(analysis.chunkExports[index].startMs)} -&gt;{' '}
+                                {formatMilliseconds(analysis.chunkExports[index].startMs)} &rarr;{' '}
                                 {formatMilliseconds(analysis.chunkExports[index].endMs)}
                               </span>
                             )}
@@ -187,29 +184,27 @@ export function ResultsPanel({
                             <p className="transcription-entry__text">
                               {entry.text && entry.text.trim().length > 0
                                 ? entry.text.trim()
-                                : '(silence ou inaudible)'}
+                                : '(silence or inaudible)'}
                             </p>
                           )}
                         </div>
                       ))}
                       <div className="transcription-full">
-                        <strong>Transcription complete :</strong>
+                        <strong>Full transcription:</strong>
                         <p className="transcription-full__text">
                           {analysis.transcriptions
                             .filter((t) => !t.error && t.text?.trim())
                             .map((t) => t.text.trim())
-                            .join(' ') || '(aucun texte transcrit)'}
+                            .join(' ') || '(no text transcribed)'}
                         </p>
                       </div>
                     </div>
                   ) : (
-                    <p className="placeholder">
-                      Aucun resultat de transcription pour ces segments.
-                    </p>
+                    <p className="placeholder">No transcription results for these segments.</p>
                   )}
                 </>
               ) : (
-                <p className="placeholder">Transcription desactivee pour cette analyse.</p>
+                <p className="placeholder">Transcription was disabled for this analysis.</p>
               )}
             </div>
           </article>

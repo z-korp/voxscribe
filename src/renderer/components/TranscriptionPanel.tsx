@@ -4,61 +4,52 @@ type TranscriptionPanelProps = {
   settings: TranscriptionSettings;
   onToggle: (enabled: boolean) => void;
   onLanguageChange: (language: string) => void;
-  onEnableWordsChange: (enableWords: boolean) => void;
 };
 
 export function TranscriptionPanel({
   settings,
   onToggle,
   onLanguageChange,
-  onEnableWordsChange,
 }: TranscriptionPanelProps): JSX.Element {
   return (
     <section className="card">
       <header className="card__header">
-        <h2>Transcription Whisper</h2>
-        <p>Reconnaissance vocale locale avec Whisper d&apos;OpenAI.</p>
+        <h2>Transcription</h2>
+        <p>Local speech-to-text with OpenAI Whisper.</p>
       </header>
       <div className="card__body card__body--grid">
         <label className="option">
-          <span className="option__label">Activer la transcription Whisper</span>
+          <span className="option__label">Enable transcription</span>
           <input
             type="checkbox"
             checked={settings.enabled}
             onChange={(event) => onToggle(event.target.checked)}
           />
           <span className="option__description">
-            Whisper telechargera automatiquement les modeles necessaires au premier usage (~1.5 GB
-            par modele).
+            Whisper will auto-download the model on first use (~1.5 GB).
           </span>
         </label>
         <label className="option">
-          <span className="option__label">Langue</span>
+          <span className="option__label">Language</span>
           <select
             className="option__input"
             value={settings.language}
             disabled={!settings.enabled}
             onChange={(event) => onLanguageChange(event.target.value)}
           >
-            <option value="fr">Francais (medium)</option>
-            <option value="en">English (medium.en)</option>
-            <option value="auto">Auto-detection</option>
+            <option value="auto">Auto-detect</option>
+            <option value="en">English</option>
+            <option value="fr">French</option>
+            <option value="es">Spanish</option>
+            <option value="de">German</option>
+            <option value="it">Italian</option>
+            <option value="pt">Portuguese</option>
+            <option value="nl">Dutch</option>
+            <option value="ja">Japanese</option>
+            <option value="zh">Chinese</option>
           </select>
           <span className="option__description">
-            Modele EN optimise pour l&apos;anglais (~900 MB), FR pour francais/multilingue (~1.5
-            GB).
-          </span>
-        </label>
-        <label className="option">
-          <span className="option__label">Inclure le detail par mot</span>
-          <input
-            type="checkbox"
-            checked={settings.enableWords}
-            disabled={!settings.enabled}
-            onChange={(event) => onEnableWordsChange(event.target.checked)}
-          />
-          <span className="option__description">
-            Ajoute les minutages par mot dans les resultats.
+            Select the spoken language for better accuracy.
           </span>
         </label>
       </div>

@@ -27,7 +27,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
       setRecordingState((prev) => ({
         ...prev,
         status: 'error',
-        error: "L'API d'enregistrement n'est pas disponible.",
+        error: 'Recording API is not available.',
       }));
       return;
     }
@@ -45,7 +45,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
       setRecordingState((prev) => ({
         ...prev,
         status: 'error',
-        error: 'Impossible de charger les sources.',
+        error: 'Failed to load audio sources.',
       }));
     }
   }, []);
@@ -57,7 +57,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
       setRecordingState((prev) => ({
         ...prev,
         status: 'error',
-        error: 'Veuillez selectionner une source.',
+        error: 'Please select a source.',
       }));
       return;
     }
@@ -132,7 +132,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         try {
           const api = window.electronAPI;
           if (!api?.saveRecording) {
-            throw new Error("L'API de sauvegarde n'est pas disponible.");
+            throw new Error('Save API is not available.');
           }
 
           const result = await api.saveRecording({ buffer: arrayBuffer });
@@ -143,13 +143,13 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
             savedFilePath: result.filePath,
           }));
 
-          setInfoMessage(`Enregistrement sauvegarde : ${result.filePath}`);
+          setInfoMessage(`Recording saved: ${result.filePath}`);
         } catch (error) {
           console.error('Save failed', error);
           setRecordingState((prev) => ({
             ...prev,
             status: 'error',
-            error: "Impossible de sauvegarder l'enregistrement.",
+            error: 'Failed to save recording.',
           }));
         }
       };
@@ -175,7 +175,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
       setRecordingState((prev) => ({
         ...prev,
         status: 'error',
-        error: error instanceof Error ? error.message : "Impossible de demarrer l'enregistrement.",
+        error: error instanceof Error ? error.message : 'Failed to start recording.',
       }));
     }
   }, [recordingState, stopRecordingStreams, setInfoMessage]);

@@ -1,105 +1,97 @@
-import { AnalysisOptions } from '../types';
+import { AnalysisOptions, PresetType, PRESETS } from '../types';
 
 type ParametersPanelProps = {
+  selectedPreset: PresetType;
   options: AnalysisOptions | null;
+  onPresetChange: (preset: PresetType) => void;
   onOptionChange: (key: keyof AnalysisOptions, value: number) => void;
 };
 
-type OptionConfig = {
-  key: keyof AnalysisOptions;
-  label: string;
-  description: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-};
-
-export function ParametersPanel({ options, onOptionChange }: ParametersPanelProps): JSX.Element {
-  const optionViewModel: OptionConfig[] = options
-    ? [
-        {
-          key: 'silenceThresholdDb',
-          label: 'Seuil de silence (dB)',
-          description: 'Volume maximal considere comme silence.',
-          value: options.silenceThresholdDb,
-          min: -80,
-          max: 0,
-          step: 1,
-        },
-        {
-          key: 'minSilenceDurationMs',
-          label: 'Duree minimale du silence (ms)',
-          description: 'Silence continu requis pour declencher une coupe.',
-          value: options.minSilenceDurationMs,
-          min: 100,
-          max: 10000,
-          step: 50,
-        },
-        {
-          key: 'paddingBeforeMs',
-          label: 'Marge avant (ms)',
-          description: 'Temps conserve avant chaque segment parle.',
-          value: options.paddingBeforeMs,
-          min: 0,
-          max: 2000,
-          step: 10,
-        },
-        {
-          key: 'paddingAfterMs',
-          label: 'Marge apres (ms)',
-          description: 'Temps conserve apres chaque segment parle.',
-          value: options.paddingAfterMs,
-          min: 0,
-          max: 2000,
-          step: 10,
-        },
-        {
-          key: 'minChunkDurationMs',
-          label: 'Duree minimale des segments (ms)',
-          description: 'Segments plus courts seront etendus autour de la parole detectee.',
-          value: options.minChunkDurationMs,
-          min: 100,
-          max: 60000,
-          step: 50,
-        },
-        {
-          key: 'maxChunkDurationMs',
-          label: 'Duree maximale des segments (ms)',
-          description: 'Segments plus longs seront decoupes.',
-          value: options.maxChunkDurationMs,
-          min: 1000,
-          max: 30 * 60 * 1000,
-          step: 1000,
-        },
-      ]
-    : [];
+export function ParametersPanel({
+  selectedPreset,
+  options,
+  onPresetChange,
+  onOptionChange,
+}: ParametersPanelProps): JSX.Element {
+  const presetList = Object.values(PRESETS);
 
   return (
     <section className="card">
       <header className="card__header">
-        <h2>Parametres</h2>
-        <p>Affinez la detection des silences.</p>
+        <h2>Settings</h2>
+        <p>Configure silence detection.</p>
       </header>
-      <div className="card__body card__body--grid">
-        {options ? (
-          optionViewModel.map((option) => (
-            <label key={option.key} className="option">
-              <span className="option__label">{option.label}</span>
+      <div className="card__body">
+        <label className="option">
+          <span className="option__label">Preset</span>
+          <select
+            className="option__input"
+            value={selectedPreset}
+            onChange={(e) => onPresetChange(e.target.value as PresetType)}
+          >
+            {presetList.map((preset) => (
+              <option key={preset.id} value={preset.id}>
+                {preset.name}
+              </option>
+            ))}
+          </select>
+          <span className="option__description">{PRESETS[selectedPreset].description}</span>
+        </label>
+
+        {selectedPreset === 'custom' && options && (
+          <div className="card__body--grid" style={{ marginTop: '1rem' }}>
+            <label className="option">
+              <span className="option__label">Silence threshold (dB)</span>
               <input
                 className="option__input"
                 type="number"
-                min={option.min}
-                max={option.max}
-                step={option.step}
-                value={option.value}
-                onChange={(event) => onOptionChange(option.key, Number(event.target.value))}
+                min={-80}
+                max={0}
+                step={1}
+                value={options.silenceThresholdDb}
+                onChange={(e) => onOptionChange('silenceThresholdDb', Number(e.target.value))}
               />
-              <span className="option__description">{option.description}</span>
+              <span className="option__description">
+                Maximum volume level considered as silence.
+              </span>
             </label>
-          ))
-        ) : (
-          <p className="placeholder">Chargement des reglages...</p>
+
+            <label className="option">
+              <span className="option__label">Minimum silence duration (ms)</span>
+              <input
+                className="option__input"
+                type="number"
+                min={100}
+                max={10000}
+                step={100}
+                value={options.minSilenceDurationMs}
+                onChange={(e) => onOptionChange('minSilenceDurationMs', Number(e.target.value))}
+              />
+              <span className="option__description">
+                How long a silence must last to trigger a cut.
+              </span>
+            </label>
+
+            <label className="option">
+              <span className="option__label">Padding (ms)</span>
+              <input
+                className="option__input"
+                type="number"
+                min={0}
+                max={2000}
+                step={50}
+                value={options.paddingBeforeMs}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  onOptionChange('paddingBeforeMs', value);
+                  onOptionChange('paddingAfterMs', value);
+                }}
+              />
+              <span className="option__description">
+                Time kept before and after each speech segment.
+              </span>
+            </label>
+          </div>
         )}
       </div>
     </section>

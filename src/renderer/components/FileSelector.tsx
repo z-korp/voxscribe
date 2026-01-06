@@ -9,12 +9,12 @@ export function FileSelector({ selectedFiles, onSelectFiles }: FileSelectorProps
   return (
     <section className="card">
       <header className="card__header">
-        <h2>Selection</h2>
-        <p>Ajoutez vos enregistrements audio ou video.</p>
+        <h2>Files</h2>
+        <p>Select audio or video files to analyze.</p>
       </header>
       <div className="card__body">
         <button className="btn btn-primary" onClick={onSelectFiles} type="button">
-          Choisir des fichiers...
+          Choose files...
         </button>
         {selectedFiles.length > 0 ? (
           <ul className="file-list">
@@ -25,7 +25,7 @@ export function FileSelector({ selectedFiles, onSelectFiles }: FileSelectorProps
             ))}
           </ul>
         ) : (
-          <p className="placeholder">Aucun fichier selectionne.</p>
+          <p className="placeholder">No files selected.</p>
         )}
       </div>
     </section>

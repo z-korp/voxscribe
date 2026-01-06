@@ -4,6 +4,8 @@ import {
   AnalysisState,
   MediaAnalysis,
   TranscriptionSettings,
+  PresetType,
+  PRESETS,
   DEFAULT_ANALYSIS_STATE,
   DEFAULT_TRANSCRIPTION_SETTINGS,
 } from './types';
@@ -18,8 +20,8 @@ import {
 } from './components';
 
 function App(): JSX.Element {
-  const [pingResult, setPingResult] = useState<string>('...');
-  const [options, setOptions] = useState<AnalysisOptions | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState<PresetType>('meeting');
+  const [options, setOptions] = useState<AnalysisOptions>(PRESETS.meeting.options);
   const [transcriptionSettings, setTranscriptionSettings] = useState<TranscriptionSettings>(
     DEFAULT_TRANSCRIPTION_SETTINGS,
   );
@@ -69,77 +71,6 @@ function App(): JSX.Element {
   }, [cleanupPreviewUrls]);
 
   useEffect(() => {
-    let canceled = false;
-    const api = window.electronAPI;
-    if (!api?.ping) {
-      setPingResult('electronAPI non disponible');
-      return;
-    }
-
-    void api
-      .ping()
-      .then((result) => {
-        if (!canceled) setPingResult(result);
-      })
-      .catch((error) => {
-        console.error('IPC ping failed', error);
-        if (!canceled) setPingResult('ping error');
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let canceled = false;
-    const api = window.electronAPI;
-    if (!api?.getDefaultAnalysisOptions) return;
-
-    void api
-      .getDefaultAnalysisOptions()
-      .then((defaults) => {
-        if (!canceled) setOptions(defaults);
-      })
-      .catch((error) => {
-        console.error('Failed to load default analysis options', error);
-        if (!canceled) setOptions(null);
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let canceled = false;
-    const api = window.electronAPI;
-    if (!api?.getDefaultTranscriptionOptions) return;
-
-    void api
-      .getDefaultTranscriptionOptions()
-      .then((defaults) => {
-        if (!canceled) {
-          setTranscriptionSettings({
-            enabled: defaults.enabled,
-            modelPath: defaults.modelPath ?? '',
-            language: 'fr',
-            sampleRate: defaults.sampleRate,
-            maxAlternatives: defaults.maxAlternatives,
-            enableWords: defaults.enableWords,
-          });
-        }
-      })
-      .catch((error) => {
-        console.error('Failed to load default transcription options', error);
-      });
-
-    return () => {
-      canceled = true;
-    };
-  }, []);
-
-  useEffect(() => {
     return () => {
       stopRecordingStreams();
     };
@@ -151,51 +82,51 @@ function App(): JSX.Element {
   const handleOpenPath = useCallback(async (targetPath: string) => {
     const api = window.electronAPI;
     if (!api?.openPath) {
-      setInfoMessage("Impossible d'ouvrir le chemin depuis cette interface.");
+      setInfoMessage('Cannot open path from this interface.');
       return;
     }
     try {
       await api.openPath(targetPath);
     } catch (error) {
       console.error('openPath failed', error);
-      setInfoMessage("Impossible d'ouvrir le chemin demande.");
+      setInfoMessage('Cannot open the requested path.');
     }
   }, []);
 
   const handleCopyPath = useCallback(async (targetPath: string) => {
     if (!navigator?.clipboard?.writeText) {
-      setInfoMessage('La copie dans le presse-papiers est indisponible.');
+      setInfoMessage('Clipboard is not available.');
       return;
     }
     try {
       await navigator.clipboard.writeText(targetPath);
-      setInfoMessage('Chemin copie dans le presse-papiers.');
+      setInfoMessage('Path copied to clipboard.');
     } catch (error) {
       console.error('clipboard error', error);
-      setInfoMessage('Copie du chemin impossible.');
+      setInfoMessage('Failed to copy path.');
     }
   }, []);
 
   const handleDownloadChunks = useCallback(async (directoryPath: string | null | undefined) => {
     if (!directoryPath) {
-      setInfoMessage('Aucun dossier de chunks disponible.');
+      setInfoMessage('No chunks folder available.');
       return;
     }
     const api = window.electronAPI;
     if (!api?.zipChunks) {
-      setInfoMessage('Telechargement indisponible dans cette interface.');
+      setInfoMessage('Download not available in this interface.');
       return;
     }
     try {
       const result = await api.zipChunks(directoryPath);
       if (result.canceled) {
-        setInfoMessage('Telechargement annule.');
+        setInfoMessage('Download cancelled.');
       } else if (result.filePath) {
-        setInfoMessage(`Archive sauvegardee : ${normalizePath(result.filePath)}`);
+        setInfoMessage(`Archive saved: ${normalizePath(result.filePath)}`);
       }
     } catch (error) {
       console.error('zipChunks failed', error);
-      setInfoMessage("Impossible de generer l'archive ZIP.");
+      setInfoMessage('Failed to generate ZIP archive.');
     }
   }, []);
 
@@ -204,7 +135,7 @@ function App(): JSX.Element {
     if (!api?.selectMediaSources) {
       setAnalysisState({
         status: 'error',
-        error: "L'API de selection de fichiers n'est pas disponible.",
+        error: 'File selection API is not available.',
         analyses: {},
       });
       return;
@@ -218,32 +149,33 @@ function App(): JSX.Element {
       setPreviewSources({});
       setInfoMessage(
         result.filePaths.length > 1
-          ? `${result.filePaths.length} fichiers charges.`
-          : `Fichier selectionne : ${normalizePath(result.filePaths[0])}`,
+          ? `${result.filePaths.length} files loaded.`
+          : `File selected: ${normalizePath(result.filePaths[0])}`,
       );
     } catch (error) {
       console.error('File selection failed', error);
       setAnalysisState({
         status: 'error',
-        error: 'Impossible de selectionner des fichiers.',
+        error: 'Failed to select files.',
         analyses: {},
       });
     }
   };
 
+  const handlePresetChange = (preset: PresetType): void => {
+    setSelectedPreset(preset);
+    setOptions(PRESETS[preset].options);
+  };
+
   const handleOptionChange = (key: keyof AnalysisOptions, value: number): void => {
-    setOptions((current) => {
-      if (!current) return current;
-      return { ...current, [key]: value };
-    });
+    setOptions((current) => ({ ...current, [key]: value }));
+    if (selectedPreset !== 'custom') {
+      setSelectedPreset('custom');
+    }
   };
 
   const handleTranscriptionToggle = (enabled: boolean): void => {
     setTranscriptionSettings((current) => ({ ...current, enabled }));
-  };
-
-  const handleTranscriptionEnableWordsChange = (enableWords: boolean): void => {
-    setTranscriptionSettings((current) => ({ ...current, enableWords }));
   };
 
   const handleTranscriptionLanguageChange = (language: string): void => {
@@ -257,17 +189,7 @@ function App(): JSX.Element {
       setPreviewSources({});
       setAnalysisState({
         status: 'error',
-        error: "L'analyse des medias n'est pas disponible.",
-        analyses: {},
-      });
-      return;
-    }
-    if (!options) {
-      cleanupPreviewUrls();
-      setPreviewSources({});
-      setAnalysisState({
-        status: 'error',
-        error: 'Options non disponibles.',
+        error: 'Media analysis is not available.',
         analyses: {},
       });
       return;
@@ -287,14 +209,8 @@ function App(): JSX.Element {
           options,
           transcription: {
             enabled: transcriptionSettings.enabled,
-            modelPath:
-              transcriptionSettings.modelPath.trim().length > 0
-                ? transcriptionSettings.modelPath.trim()
-                : undefined,
             language: transcriptionSettings.language,
-            sampleRate: transcriptionSettings.sampleRate,
-            maxAlternatives: transcriptionSettings.maxAlternatives,
-            enableWords: transcriptionSettings.enableWords,
+            enableWords: true,
           },
         });
         analyses[filePath] = analysis;
@@ -313,14 +229,14 @@ function App(): JSX.Element {
 
       setAnalysisState({ status: 'done', analyses });
       setPreviewSources(newPreviewSources);
-      setInfoMessage('Analyse terminee.');
+      setInfoMessage('Analysis complete.');
     } catch (error) {
-      console.error('Analyse failed', error);
+      console.error('Analysis failed', error);
       cleanupPreviewUrls();
       setPreviewSources({});
       setAnalysisState({
         status: 'error',
-        error: error instanceof Error ? error.message : "Erreur inconnue lors de l'analyse.",
+        error: error instanceof Error ? error.message : 'Unknown error during analysis.',
         analyses: {},
       });
     }
@@ -336,16 +252,14 @@ function App(): JSX.Element {
     setAnalysisState(DEFAULT_ANALYSIS_STATE);
     cleanupPreviewUrls();
     setPreviewSources({});
-    setInfoMessage(`Fichier ajoute : ${savedFilePath}`);
+    setInfoMessage(`File added: ${savedFilePath}`);
   }, [recordingState, cleanupPreviewUrls]);
 
   return (
     <div className="page">
       <header className="page__header">
         <h1>VoxScribe</h1>
-        <p className="page__subtitle">
-          Ping Electron : <strong>{pingResult}</strong>
-        </p>
+        <p className="page__subtitle">Record meetings, remove silence, transcribe locally.</p>
       </header>
 
       <main className="page__content">
@@ -362,28 +276,32 @@ function App(): JSX.Element {
           onUseRecording={handleUseRecording}
         />
 
-        <ParametersPanel options={options} onOptionChange={handleOptionChange} />
+        <ParametersPanel
+          selectedPreset={selectedPreset}
+          options={options}
+          onPresetChange={handlePresetChange}
+          onOptionChange={handleOptionChange}
+        />
 
         <TranscriptionPanel
           settings={transcriptionSettings}
           onToggle={handleTranscriptionToggle}
           onLanguageChange={handleTranscriptionLanguageChange}
-          onEnableWordsChange={handleTranscriptionEnableWordsChange}
         />
 
         <section className="card">
           <header className="card__header">
-            <h2>Analyse</h2>
-            <p>Decoupez automatiquement les zones parlees.</p>
+            <h2>Analysis</h2>
+            <p>Automatically detect and extract speech segments.</p>
           </header>
           <div className="card__body">
             <button
-              className="btn btn-secondary"
+              className="btn btn-primary"
               onClick={handleAnalyze}
               type="button"
               disabled={!hasFiles || isAnalyzing}
             >
-              {isAnalyzing ? 'Analyse en cours...' : 'Analyser'}
+              {isAnalyzing ? 'Analyzing...' : 'Analyze'}
             </button>
 
             {analysisState.status === 'error' && analysisState.error && (

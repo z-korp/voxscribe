@@ -40,10 +40,7 @@ const api = {
     };
     transcription?: {
       enabled?: boolean;
-      modelPath?: string;
       language?: string;
-      sampleRate?: number;
-      maxAlternatives?: number;
       enableWords?: boolean;
     };
   }): Promise<{

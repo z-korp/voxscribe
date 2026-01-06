@@ -16,102 +16,89 @@ describe('App', () => {
 
     it('shows no files selected placeholder', () => {
       render(<App />);
-      expect(screen.getByText(/Aucun fichier selectionne/i)).toBeInTheDocument();
+      expect(screen.getByText(/No files selected/i)).toBeInTheDocument();
     });
 
     it('renders the file selection button', () => {
       render(<App />);
-      expect(screen.getByText(/Choisir des fichiers/i)).toBeInTheDocument();
+      expect(screen.getByText(/Choose files/i)).toBeInTheDocument();
     });
 
     it('renders the recording section', () => {
       render(<App />);
-      expect(screen.getByText(/Enregistrement Meeting/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Record Meeting/i })).toBeInTheDocument();
     });
 
-    it('renders the parameters section', () => {
+    it('renders the settings section', () => {
       render(<App />);
-      expect(screen.getByText(/Parametres/i)).toBeInTheDocument();
+      expect(screen.getByText(/Settings/i)).toBeInTheDocument();
     });
 
     it('renders the transcription section', () => {
       render(<App />);
-      expect(screen.getByRole('heading', { name: /Transcription Whisper/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Transcription/i })).toBeInTheDocument();
     });
 
     it('renders the analysis section', () => {
       render(<App />);
-      expect(screen.getByRole('heading', { name: /Analyse/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Analysis/i })).toBeInTheDocument();
     });
   });
 
   describe('Analysis Controls', () => {
     it('disables analyze button when no files selected', () => {
       render(<App />);
-      const analyzeButton = screen.getByRole('button', { name: /Analyser/i });
+      const analyzeButton = screen.getByRole('button', { name: /Analyze/i });
       expect(analyzeButton).toBeDisabled();
     });
 
     it('renders start recording button', () => {
       render(<App />);
-      expect(screen.getByText(/Demarrer un enregistrement/i)).toBeInTheDocument();
+      expect(screen.getByText(/Start recording/i)).toBeInTheDocument();
     });
   });
 
   describe('Transcription Settings', () => {
     it('renders transcription toggle', () => {
       render(<App />);
-      expect(screen.getByText(/Activer la transcription Whisper/i)).toBeInTheDocument();
+      expect(screen.getByText(/Enable transcription/i)).toBeInTheDocument();
     });
 
     it('renders language selector', () => {
       render(<App />);
-      expect(screen.getByText(/Langue/i)).toBeInTheDocument();
+      expect(screen.getByDisplayValue(/Auto-detect/i)).toBeInTheDocument();
     });
 
-    it('has French as default language option', () => {
+    it('has Auto-detect as default language', () => {
       render(<App />);
-      const languageSelect = screen.getByDisplayValue(/Francais/i);
+      const languageSelect = screen.getByDisplayValue(/Auto-detect/i);
       expect(languageSelect).toBeInTheDocument();
-    });
-
-    it('renders word detail toggle', () => {
-      render(<App />);
-      expect(screen.getByText(/Inclure le detail par mot/i)).toBeInTheDocument();
     });
   });
 
-  describe('Parameter Options', () => {
-    it('loads default analysis options', async () => {
+  describe('Preset Settings', () => {
+    it('renders preset selector', async () => {
       render(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Seuil de silence/i)).toBeInTheDocument();
+        expect(screen.getByText(/Preset/i)).toBeInTheDocument();
       });
     });
 
-    it('renders silence threshold option', async () => {
+    it('has Meeting as default preset', async () => {
       render(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Seuil de silence \(dB\)/i)).toBeInTheDocument();
+        const presetSelect = screen.getByDisplayValue(/Meeting/i);
+        expect(presetSelect).toBeInTheDocument();
       });
     });
 
-    it('renders minimum silence duration option', async () => {
+    it('shows preset description', async () => {
       render(<App />);
 
       await waitFor(() => {
-        expect(screen.getByText(/Duree minimale du silence/i)).toBeInTheDocument();
-      });
-    });
-
-    it('renders padding options', async () => {
-      render(<App />);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Marge avant/i)).toBeInTheDocument();
-        expect(screen.getByText(/Marge apres/i)).toBeInTheDocument();
+        expect(screen.getByText(/Optimized for video calls/i)).toBeInTheDocument();
       });
     });
   });

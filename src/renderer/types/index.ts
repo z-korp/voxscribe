@@ -7,6 +7,57 @@ export type AnalysisOptions = {
   maxChunkDurationMs: number;
 };
 
+export type PresetType = 'meeting' | 'podcast' | 'custom';
+
+export type Preset = {
+  id: PresetType;
+  name: string;
+  description: string;
+  options: AnalysisOptions;
+};
+
+export const PRESETS: Record<PresetType, Preset> = {
+  meeting: {
+    id: 'meeting',
+    name: 'Meeting',
+    description: 'Optimized for video calls with longer pauses between speakers.',
+    options: {
+      silenceThresholdDb: -35,
+      minSilenceDurationMs: 1500,
+      paddingBeforeMs: 300,
+      paddingAfterMs: 300,
+      minChunkDurationMs: 1000,
+      maxChunkDurationMs: 300000,
+    },
+  },
+  podcast: {
+    id: 'podcast',
+    name: 'Podcast / Interview',
+    description: 'For natural conversations with shorter pauses.',
+    options: {
+      silenceThresholdDb: -40,
+      minSilenceDurationMs: 800,
+      paddingBeforeMs: 200,
+      paddingAfterMs: 200,
+      minChunkDurationMs: 500,
+      maxChunkDurationMs: 180000,
+    },
+  },
+  custom: {
+    id: 'custom',
+    name: 'Custom',
+    description: 'Fine-tune parameters manually.',
+    options: {
+      silenceThresholdDb: -35,
+      minSilenceDurationMs: 1000,
+      paddingBeforeMs: 250,
+      paddingAfterMs: 250,
+      minChunkDurationMs: 500,
+      maxChunkDurationMs: 300000,
+    },
+  },
+};
+
 export type MediaChunk = {
   id: string;
   startMs: number;
@@ -58,11 +109,7 @@ export type TranscriptionSummary = {
 
 export type TranscriptionSettings = {
   enabled: boolean;
-  modelPath: string;
   language: string;
-  sampleRate: number;
-  maxAlternatives: number;
-  enableWords: boolean;
 };
 
 export type MediaAnalysis = {
@@ -123,9 +170,5 @@ export const DEFAULT_RECORDING_STATE: RecordingState = {
 
 export const DEFAULT_TRANSCRIPTION_SETTINGS: TranscriptionSettings = {
   enabled: false,
-  modelPath: '',
-  language: 'fr',
-  sampleRate: 16000,
-  maxAlternatives: 0,
-  enableWords: true,
+  language: 'auto',
 };
