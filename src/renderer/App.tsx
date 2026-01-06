@@ -16,7 +16,10 @@ import {
   ParametersPanel,
   TranscriptionPanel,
   ResultsPanel,
+  AudioDebugPanel,
+  StereoMixGuideModal,
 } from './components';
+import { useAudioDevices } from './hooks/useAudioDevices';
 
 const DEFAULT_TRANSCRIPTION: TranscriptionSettings = {
   language: 'auto',
@@ -43,6 +46,16 @@ function App(): JSX.Element {
     handleToggleMicrophone,
     handleResetRecording,
   } = useRecording(setInfoMessage);
+
+  const {
+    devices: audioDevices,
+    strategy: audioStrategy,
+    loading: audioLoading,
+    refreshDevices,
+    testDevice,
+  } = useAudioDevices();
+
+  const [showStereoMixGuide, setShowStereoMixGuide] = useState(false);
 
   const cleanupPreviewUrls = useCallback((): void => {
     previewUrlCacheRef.current.forEach((url) => {
@@ -253,6 +266,30 @@ function App(): JSX.Element {
     }
   }, [recordingState.status, recordingState.savedFilePath]);
 
+  // Show Stereo Mix guide if fallback strategy and not dismissed
+  useEffect(() => {
+    if (
+      audioStrategy?.type === 'desktop-fallback' &&
+      audioStrategy.suggestStereoMix &&
+      !audioLoading
+    ) {
+      const dismissed = localStorage.getItem('stereoMixGuideDismissed');
+      if (!dismissed) {
+        setShowStereoMixGuide(true);
+      }
+    }
+  }, [audioStrategy, audioLoading]);
+
+  const handleCloseStereoMixGuide = () => {
+    localStorage.setItem('stereoMixGuideDismissed', 'true');
+    setShowStereoMixGuide(false);
+  };
+
+  const handleTestAudioDevices = async () => {
+    await refreshDevices();
+    setShowStereoMixGuide(false);
+  };
+
   return (
     <div className="page">
       <header className="page__header">
@@ -260,6 +297,15 @@ function App(): JSX.Element {
       </header>
 
       <main className="page__content">
+        {/* Audio Debug Panel */}
+        <AudioDebugPanel
+          devices={audioDevices}
+          strategy={audioStrategy}
+          loading={audioLoading}
+          onRefresh={refreshDevices}
+          onTest={testDevice}
+        />
+
         <div className="panels-row">
           <FileSelector
             selectedFiles={selectedFiles}
@@ -316,6 +362,13 @@ function App(): JSX.Element {
           onDownloadChunks={handleDownloadChunks}
         />
       </main>
+
+      {/* Stereo Mix Guide Modal */}
+      <StereoMixGuideModal
+        isOpen={showStereoMixGuide}
+        onClose={handleCloseStereoMixGuide}
+        onTest={handleTestAudioDevices}
+      />
     </div>
   );
 }

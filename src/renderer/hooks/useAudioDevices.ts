@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { AudioDevice, CaptureStrategy, AudioDeviceType } from '../../main/types/audio-devices';
+import type { AudioDevice, CaptureStrategy, AudioDeviceType } from '../types/audio-devices';
 
 /**
  * Hook to detect and manage audio devices

@@ -1,6 +1,6 @@
 import type { ElectronAPI as ToolkitElectronAPI } from '@electron-toolkit/preload';
 import type { FileFilter } from 'electron';
-import type { AudioDevice, CaptureStrategy } from '../main/types/audio-devices';
+import type { AudioDevice, CaptureStrategy } from './types/audio-devices';
 
 export interface ElectronAPI {
   ping: () => Promise<string>;

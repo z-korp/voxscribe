@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { RecordingState, DEFAULT_RECORDING_STATE } from '../types';
+import type { CaptureStrategy, AudioDevice } from '../types/audio-devices';
 
 type RecordingRefs = {
   mediaRecorder: MediaRecorder | null;
@@ -7,6 +8,7 @@ type RecordingRefs = {
   recordingStartTime: number;
   recordingTimer: number | null;
   activeStreams: MediaStream[];
+  audioContext: AudioContext | null;
 };
 
 export function useRecording(setInfoMessage: (msg: string | null) => void) {
@@ -19,6 +21,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
     recordingStartTime: 0,
     recordingTimer: null,
     activeStreams: [],
+    audioContext: null,
   });
 
   const stopRecordingStreams = useCallback((): void => {
@@ -27,47 +30,123 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
     });
     refs.current.activeStreams = [];
 
+    if (refs.current.audioContext) {
+      refs.current.audioContext.close();
+      refs.current.audioContext = null;
+    }
+
     if (refs.current.recordingTimer !== null) {
       window.clearInterval(refs.current.recordingTimer);
       refs.current.recordingTimer = null;
     }
   }, []);
 
-  const startRecording = useCallback(async (): Promise<void> => {
-    const api = window.electronAPI;
-    if (!api?.getRecordingSources) {
-      setRecordingState((prev) => ({
-        ...prev,
-        status: 'error',
-        error: 'Recording API is not available.',
-      }));
-      return;
-    }
+  /**
+   * Strategy A: Loopback capture (Stereo Mix, VB-Cable, etc.)
+   * Captures all system audio automatically
+   */
+  const startLoopbackCapture = useCallback(
+    async (deviceId: string, deviceLabel: string): Promise<MediaStream> => {
+      try {
+        // Try direct device capture (Stereo Mix, VB-Cable)
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            deviceId: { exact: deviceId },
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+          },
+        });
 
-    try {
-      // Get sources and auto-select the first one (usually "Entire Screen")
+        refs.current.activeStreams.push(stream);
+        setInfoMessage(`✅ Capturing all system audio via ${deviceLabel}`);
+        return stream;
+      } catch (error) {
+        console.error('Loopback capture failed:', error);
+        throw new Error(`Failed to capture loopback device: ${deviceLabel}`);
+      }
+    },
+    [setInfoMessage],
+  );
+
+  /**
+   * Strategy B: Multi-source capture (Arctis Chat + Game, etc.)
+   * Captures multiple audio devices and mixes them together
+   */
+  const startMultiSourceCapture = useCallback(
+    async (
+      deviceIds: string[],
+      deviceLabels: string[],
+      includeMicrophone: boolean,
+    ): Promise<MediaStream> => {
+      const audioContext = new AudioContext();
+      refs.current.audioContext = audioContext;
+
+      const destination = audioContext.createMediaStreamDestination();
+
+      // Capture each source
+      for (let i = 0; i < deviceIds.length; i++) {
+        const deviceId = deviceIds[i];
+        const label = deviceLabels[i];
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: { exact: deviceId } },
+          });
+
+          const source = audioContext.createMediaStreamSource(stream);
+          source.connect(destination);
+
+          refs.current.activeStreams.push(stream);
+          console.log(`Captured source: ${label}`);
+        } catch (error) {
+          console.warn(`Failed to capture ${label}:`, error);
+        }
+      }
+
+      // Add microphone if requested
+      if (includeMicrophone) {
+        try {
+          const micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+            },
+          });
+
+          const micSource = audioContext.createMediaStreamSource(micStream);
+          micSource.connect(destination);
+
+          refs.current.activeStreams.push(micStream);
+          console.log('Microphone added to mix');
+        } catch (error) {
+          console.warn('Failed to add microphone:', error);
+        }
+      }
+
+      setInfoMessage(`✅ Mixing ${deviceIds.length} audio sources`);
+      return destination.stream;
+    },
+    [setInfoMessage],
+  );
+
+  /**
+   * Strategy C: Desktop fallback (current method)
+   * Captures desktop audio via screen share
+   */
+  const startDesktopCapture = useCallback(
+    async (includeMicrophone: boolean): Promise<MediaStream> => {
+      const api = window.electronAPI;
+      if (!api?.getRecordingSources) {
+        throw new Error('Recording API is not available.');
+      }
+
       const sources = await api.getRecordingSources();
       if (sources.length === 0) {
-        setRecordingState((prev) => ({
-          ...prev,
-          status: 'error',
-          error: 'No audio sources available.',
-        }));
-        return;
+        throw new Error('No audio sources available.');
       }
 
       const selectedSourceId = sources[0].id;
-
-      // Read includeMicrophone from current state via callback
-      // This avoids stale closure issues
-      let includeMicrophone = false;
-      setRecordingState((prev) => {
-        includeMicrophone = prev.includeMicrophone;
-        return prev;
-      });
-
-      stopRecordingStreams();
-      refs.current.recordedChunks = [];
 
       const systemStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -101,8 +180,9 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         refs.current.activeStreams.push(micStream);
 
         const audioContext = new AudioContext();
-        const destination = audioContext.createMediaStreamDestination();
+        refs.current.audioContext = audioContext;
 
+        const destination = audioContext.createMediaStreamDestination();
         const systemSource = audioContext.createMediaStreamSource(systemStream);
         const micSource = audioContext.createMediaStreamSource(micStream);
 
@@ -114,6 +194,117 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         finalStream = new MediaStream(systemStream.getAudioTracks());
       }
 
+      return finalStream;
+    },
+    [],
+  );
+
+  /**
+   * Get capture strategy based on available audio devices
+   */
+  const getCaptureStrategy = useCallback(async (): Promise<{
+    strategy: CaptureStrategy;
+    devices: AudioDevice[];
+  }> => {
+    // Request permission first
+    await navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      stream.getTracks().forEach((track) => track.stop());
+    });
+
+    // Enumerate devices
+    const mediaDevices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = mediaDevices.filter((d) => d.kind === 'audioinput');
+
+    // Convert to AudioDevice format
+    const devices: AudioDevice[] = audioInputs.map((d) => {
+      const label = d.label.toLowerCase();
+
+      // Classify device type
+      let type: AudioDevice['type'] = 'microphone';
+      if (
+        label.includes('stereo mix') ||
+        label.includes('mixage') ||
+        label.includes('vb-cable') ||
+        label.includes('blackhole') ||
+        label.includes('loopback')
+      ) {
+        type = 'loopback';
+      } else if (label.includes('chat') || label.includes('game')) {
+        type = 'multi-output';
+      }
+
+      return {
+        id: d.deviceId,
+        label: d.label || `Device ${d.deviceId.slice(0, 8)}`,
+        kind: 'audioinput',
+        type,
+        isDefault: d.deviceId === 'default',
+        groupId: d.groupId,
+      };
+    });
+
+    // Get recommended strategy
+    const api = window.electronAPI;
+    if (api?.recommendCaptureStrategy) {
+      const strategy = await api.recommendCaptureStrategy(devices);
+      return { strategy, devices };
+    }
+
+    // Fallback strategy
+    return {
+      strategy: {
+        type: 'desktop-fallback',
+        sourceId: '',
+        warning: 'Using desktop capture fallback',
+        suggestStereoMix: process.platform === 'win32',
+      },
+      devices,
+    };
+  }, []);
+
+  const startRecording = useCallback(async (): Promise<void> => {
+    try {
+      // Get current microphone setting
+      let includeMicrophone = false;
+      setRecordingState((prev) => {
+        includeMicrophone = prev.includeMicrophone;
+        return prev;
+      });
+
+      stopRecordingStreams();
+      refs.current.recordedChunks = [];
+
+      // Get capture strategy
+      const { strategy } = await getCaptureStrategy();
+
+      let finalStream: MediaStream;
+
+      // Execute strategy
+      switch (strategy.type) {
+        case 'loopback':
+          finalStream = await startLoopbackCapture(strategy.deviceId, strategy.deviceLabel);
+          break;
+
+        case 'multi-source':
+          finalStream = await startMultiSourceCapture(
+            strategy.deviceIds,
+            strategy.deviceLabels,
+            includeMicrophone,
+          );
+          break;
+
+        case 'desktop-fallback':
+          finalStream = await startDesktopCapture(includeMicrophone);
+          if (strategy.suggestStereoMix) {
+            setInfoMessage(`⚠️ ${strategy.warning}`);
+          }
+          break;
+
+        default:
+          throw new Error('Unknown capture strategy');
+      }
+
+      // Create MediaRecorder
       const mediaRecorder = new MediaRecorder(finalStream, {
         mimeType: 'audio/webm;codecs=opus',
       });
@@ -181,7 +372,14 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
         error: error instanceof Error ? error.message : 'Failed to start recording.',
       }));
     }
-  }, [stopRecordingStreams, setInfoMessage]);
+  }, [
+    stopRecordingStreams,
+    getCaptureStrategy,
+    startLoopbackCapture,
+    startMultiSourceCapture,
+    startDesktopCapture,
+    setInfoMessage,
+  ]);
 
   const stopRecording = useCallback((): void => {
     const recorder = refs.current.mediaRecorder;
