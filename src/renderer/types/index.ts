@@ -107,9 +107,20 @@ export type TranscriptionSummary = {
   enableWords: boolean;
 };
 
+export type TranscriptionLanguage =
+  | 'auto'
+  | 'en'
+  | 'fr'
+  | 'es'
+  | 'de'
+  | 'it'
+  | 'pt'
+  | 'nl'
+  | 'ja'
+  | 'zh';
+
 export type TranscriptionSettings = {
-  enabled: boolean;
-  language: string;
+  language: TranscriptionLanguage;
 };
 
 export type MediaAnalysis = {
@@ -169,6 +180,5 @@ export const DEFAULT_RECORDING_STATE: RecordingState = {
 };
 
 export const DEFAULT_TRANSCRIPTION_SETTINGS: TranscriptionSettings = {
-  enabled: false,
   language: 'auto',
 };
