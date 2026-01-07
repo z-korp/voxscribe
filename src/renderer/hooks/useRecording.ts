@@ -8,6 +8,7 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
   const recordingStartTimeRef = useRef<number>(0);
   const recordingTimerRef = useRef<number | null>(null);
   const activeStreamsRef = useRef<MediaStream[]>([]);
+  const usingNativeAudioRef = useRef<boolean>(false);
 
   const stopRecordingStreams = useCallback((): void => {
     activeStreamsRef.current.forEach((stream) => {
@@ -33,6 +34,42 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
     }
 
     try {
+      // PRIORITY 1: Try native C# multi-device audio capture
+      if (api.nativeAudioCheckAvailable && api.nativeAudioStartCapture) {
+        try {
+          const isAvailable = await api.nativeAudioCheckAvailable();
+          if (isAvailable) {
+            console.log('Starting native C# multi-device audio capture...');
+            await api.nativeAudioStartCapture(); // Auto-detects Arctis devices
+            usingNativeAudioRef.current = true;
+
+            // Start timer
+            recordingStartTimeRef.current = Date.now();
+            setRecordingState((prev) => ({
+              ...prev,
+              status: 'recording',
+              durationMs: 0,
+              error: undefined,
+            }));
+
+            recordingTimerRef.current = window.setInterval(() => {
+              const elapsed = Date.now() - recordingStartTimeRef.current;
+              setRecordingState((prev) => ({ ...prev, durationMs: elapsed }));
+            }, 100);
+
+            setInfoMessage(
+              'Recording started using: Native multi-device capture (Arctis Chat + Game)',
+            );
+            console.log('✓ Native C# capture started successfully');
+            return; // Exit early - we're using native capture
+          }
+        } catch (nativeError) {
+          console.warn('Native C# capture failed, falling back:', nativeError);
+          usingNativeAudioRef.current = false;
+        }
+      }
+
+      // PRIORITY 2 & 3: Fallback to existing methods
       // Get sources and auto-select the first one (usually "Entire Screen")
       const sources = await api.getRecordingSources();
       if (sources.length === 0) {
@@ -164,22 +201,69 @@ export function useRecording(setInfoMessage: (msg: string | null) => void) {
     }
   }, [recordingState.includeMicrophone, stopRecordingStreams, setInfoMessage]);
 
-  const stopRecording = useCallback((): void => {
+  const stopRecording = useCallback(async (): Promise<void> => {
+    // Handle native C# audio capture
+    if (usingNativeAudioRef.current) {
+      const api = window.electronAPI;
+      if (!api?.nativeAudioStopCapture) {
+        console.error('Native audio stop API not available');
+        return;
+      }
+
+      try {
+        // Stop timer
+        if (recordingTimerRef.current !== null) {
+          window.clearInterval(recordingTimerRef.current);
+          recordingTimerRef.current = null;
+        }
+
+        setRecordingState((prev) => ({ ...prev, status: 'saving' }));
+
+        // Stop native capture and get WAV file
+        const result = await api.nativeAudioStopCapture();
+
+        setRecordingState((prev) => ({
+          ...prev,
+          status: 'done',
+          savedFilePath: result.filePath,
+        }));
+
+        setInfoMessage(`Recording saved: ${result.filePath}`);
+        usingNativeAudioRef.current = false;
+      } catch (error) {
+        console.error('Failed to stop native audio capture:', error);
+        setRecordingState((prev) => ({
+          ...prev,
+          status: 'error',
+          error: 'Failed to save recording.',
+        }));
+        usingNativeAudioRef.current = false;
+      }
+      return;
+    }
+
+    // Handle regular MediaRecorder-based recording
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== 'inactive') {
       recorder.stop();
     }
     mediaRecorderRef.current = null;
-  }, []);
+  }, [setInfoMessage]);
 
   const handleToggleMicrophone = useCallback((enabled: boolean): void => {
     setRecordingState((prev) => ({ ...prev, includeMicrophone: enabled }));
   }, []);
 
-  const handleResetRecording = useCallback((): void => {
+  const handleResetRecording = useCallback(async (): Promise<void> => {
+    // If native audio is running, stop it first
+    if (usingNativeAudioRef.current) {
+      await stopRecording();
+    }
+
     stopRecordingStreams();
+    usingNativeAudioRef.current = false;
     setRecordingState(DEFAULT_RECORDING_STATE);
-  }, [stopRecordingStreams]);
+  }, [stopRecordingStreams, stopRecording]);
 
   return {
     recordingState,

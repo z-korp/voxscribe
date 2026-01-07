@@ -126,6 +126,21 @@ export interface ElectronAPI {
     filePath: string;
     fileUrl: string;
   }>;
+
+  // electron-audio-loopback APIs
+  enableLoopbackAudio: () => Promise<void>;
+  disableLoopbackAudio: () => Promise<void>;
+
+  // Native multi-device audio capture APIs
+  nativeAudioCheckAvailable: () => Promise<boolean>;
+  nativeAudioListDevices: () => Promise<string[]>;
+  nativeAudioStartCapture: (deviceNames?: string[]) => Promise<{ success: boolean }>;
+  nativeAudioStopCapture: () => Promise<{
+    filePath: string;
+    fileUrl: string;
+    buffer: ArrayBuffer;
+  }>;
+  nativeAudioIsCapturing: () => Promise<boolean>;
 }
 
 declare global {

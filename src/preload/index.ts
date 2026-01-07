@@ -136,6 +136,23 @@ const api = {
     filePath: string;
     fileUrl: string;
   }> => ipcRenderer.invoke('recording:save', options),
+
+  // electron-audio-loopback APIs (handlers auto-registered by initMain)
+  enableLoopbackAudio: (): Promise<void> => ipcRenderer.invoke('enable-loopback-audio'),
+  disableLoopbackAudio: (): Promise<void> => ipcRenderer.invoke('disable-loopback-audio'),
+
+  // Native multi-device audio capture APIs
+  nativeAudioCheckAvailable: (): Promise<boolean> =>
+    ipcRenderer.invoke('native-audio:check-available'),
+  nativeAudioListDevices: (): Promise<string[]> => ipcRenderer.invoke('native-audio:list-devices'),
+  nativeAudioStartCapture: (deviceNames?: string[]): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('native-audio:start-capture', deviceNames),
+  nativeAudioStopCapture: (): Promise<{
+    filePath: string;
+    fileUrl: string;
+    buffer: ArrayBuffer;
+  }> => ipcRenderer.invoke('native-audio:stop-capture'),
+  nativeAudioIsCapturing: (): Promise<boolean> => ipcRenderer.invoke('native-audio:is-capturing'),
 };
 
 if (process.contextIsolated) {

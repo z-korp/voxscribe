@@ -36,8 +36,16 @@ coverage/
 *.temp
 tmp/
 temp/
+temp_voxscribe/
+nul
 
 # Lock files (keep only package-lock.json)
 pnpm-lock.yaml
 bun.lock
 yarn.lock
+
+# C# build outputs (native-capturer)
+native-capturer/bin/
+native-capturer/obj/
+
+# Keep the compiled exe in resources/ (committed to repo)
