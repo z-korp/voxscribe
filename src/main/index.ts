@@ -3,11 +3,20 @@ const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, shell } = electron
 import fs from 'node:fs';
 import path from 'node:path';
 import archiver from 'archiver';
+import { initMain } from 'electron-audio-loopback';
 import {
   MediaChunkService,
   type MediaAnalysisRequest,
   type MediaAnalysisResponse,
 } from './media-chunker';
+import { NativeAudioCaptureService } from './native-audio-capture';
+
+// Initialize electron-audio-loopback before app.whenReady()
+// This enables native system audio capture via WASAPI Loopback (Windows) / ScreenCaptureKit (macOS)
+initMain({
+  loopbackWithMute: false, // Don't mute speakers during capture
+  forceCoreAudioTap: false, // Use default audio capture method for the platform
+});
 
 if (process.env['WSL_DISTRO_NAME']) {
   app.disableHardwareAcceleration();
@@ -17,6 +26,7 @@ if (process.env['WSL_DISTRO_NAME']) {
 const isDevelopment = !app.isPackaged;
 let mainWindow: BrowserWindow | null = null;
 const mediaService = new MediaChunkService();
+const nativeAudioService = new NativeAudioCaptureService();
 
 async function zipDirectory(sourceDir: string, outPath: string): Promise<void> {
   await fs.promises.mkdir(path.dirname(outPath), { recursive: true });
@@ -243,6 +253,44 @@ ipcMain.handle(
     };
   },
 );
+
+// Native audio capture handlers
+ipcMain.handle('native-audio:check-available', async () => {
+  return nativeAudioService.isAvailable();
+});
+
+ipcMain.handle('native-audio:list-devices', async () => {
+  return await nativeAudioService.listDevices();
+});
+
+ipcMain.handle('native-audio:start-capture', async (_, deviceNames?: string[]) => {
+  await nativeAudioService.startCapture(deviceNames);
+  return { success: true };
+});
+
+ipcMain.handle('native-audio:stop-capture', async () => {
+  const wavBuffer = await nativeAudioService.stopCapture();
+
+  // Save WAV to temp file
+  const recordingsDir = path.join(app.getPath('userData'), 'recordings');
+  await fs.promises.mkdir(recordingsDir, { recursive: true });
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `native-capture-${timestamp}.wav`;
+  const filePath = path.join(recordingsDir, filename);
+
+  await fs.promises.writeFile(filePath, wavBuffer);
+
+  return {
+    filePath,
+    fileUrl: `file://${filePath}`,
+    buffer: wavBuffer.buffer as ArrayBuffer,
+  };
+});
+
+ipcMain.handle('native-audio:is-capturing', async () => {
+  return nativeAudioService.isCaptureActive();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -61,6 +61,13 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "resources/",
+        "to": ".",
+        "filter": [
+          "*.exe"
+        ]
       }
     ],
     "win": {
@@ -104,6 +111,7 @@
     "@ffprobe-installer/ffprobe": "^2.1.2",
     "@remotion/install-whisper-cpp": "^4.0.399",
     "archiver": "^7.0.1",
+    "electron-audio-loopback": "^1.0.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -116,7 +124,7 @@
     "@typescript-eslint/eslint-plugin": "^6.18.1",
     "@typescript-eslint/parser": "^6.18.1",
     "@vitejs/plugin-react": "^4.2.1",
-    "electron": "^27.1.0",
+    "electron": "^31.7.7",
     "electron-builder": "^24.9.1",
     "electron-vite": "^2.0.0",
     "eslint": "^8.56.0",
