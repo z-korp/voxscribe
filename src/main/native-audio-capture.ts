@@ -182,7 +182,9 @@ export class NativeAudioCaptureService {
     if (fs.existsSync(this.stopFilePath)) {
       try {
         await fs.promises.unlink(this.stopFilePath);
-      } catch {}
+      } catch {
+        // Ignore - file may already be deleted
+      }
     }
 
     // Wait a bit more for file to be fully written
